@@ -11,6 +11,14 @@ A weight & balance calculator for light aircraft. Runs as a Progressive Web App:
 - **Scenarios** — save the current loading (stations, fuel, duration, mode, and legs) under a name like "Solo + full fuel" or "Instructor + student + 1.5 hr". Per aircraft. Recall with one tap. Travel with the aircraft via export/import.
 - **Print / PDF** — tap the print icon to render a single-page A4 W&B sheet showing: aircraft, date/PIC blanks, pass/fail banner, loading summary, headline results, and envelope chart. Use the browser's "Save as PDF" option to keep it as a file.
 - **Duplicate aircraft** — "Duplicate selected" on the aircraft list, or "Save as copy" inside the config editor. Faster than re-entering an aircraft from scratch when only the empty weight, empty arm, or registration differs.
+- **Performance (takeoff and landing distance)** — for aircraft with P-chart data, the Performance tab computes:
+  - Takeoff and landing distance required (over 50 ft), with all 6 CASO 4 operation lines (Private/Air Transport × Paved/Grass × Day/Night).
+  - Wind components from runway heading + wind direction/speed, or directly entered as headwind component.
+  - Slope, surface, and wet-runway corrections applied automatically.
+  - Crosswind component checked against the demonstrated and club crosswind limits (lower of the two wins).
+  - GO / NO-GO traffic-light vs TORA and LDA, with margin %.
+  - Recent runways (last 5) saved across sessions for quick re-entry — never authoritative, always re-verify against the current AIP.
+  - Currently the PA-38 has full P-chart data from the Wellington Aero Club P-charts (Dom Donald 2024). Other aircraft will say "no performance data" until P-charts are added.
 - All numbers checked: any out-of-limits condition triggers a red banner listing every violation.
 - Calculation breakdown table for each result (item, weight, arm, moment) so you or an examiner can audit the answer.
 - Supports both imperial (lb / in / US gal) and metric (kg / mm / L) units, per aircraft.

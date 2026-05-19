@@ -179,6 +179,7 @@
       <button data-mode="forward" class="active" onclick="App.setMode('forward')">Plan flight</button>
       <button data-mode="reverse" onclick="App.setMode('reverse')">Max fuel</button>
       <button data-mode="multileg" onclick="App.setMode('multileg')">Multi-leg</button>
+      <button data-mode="performance" onclick="App.setMode('performance')">Performance</button>
     </div>
 
     <div class="scenario-bar">
@@ -214,6 +215,92 @@
       <div id="fuel-controls"></div>
     </div>
 
+    <div id="perf-cards" class="hidden">
+      <div class="card">
+        <h2>Runway <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
+        <div id="recent-runways-row" style="margin-bottom:8px;display:none">
+          <label>Recent runways</label>
+          <div style="display:flex;gap:6px">
+            <select id="recent-rwy-select" style="flex:1" onchange="App.loadRecentRunway(this.value)"><option value="">— recall a runway —</option></select>
+            <button class="icon-btn" onclick="App.clearRecentRunways()" title="Clear recent" aria-label="Clear recent">🗑</button>
+          </div>
+        </div>
+        <div class="row">
+          <div style="flex:2"><label>Designator</label><input type="text" id="rwy-ident" placeholder="e.g. NZWN 16"></div>
+          <div><label>Heading (°)</label><input type="number" inputmode="decimal" id="rwy-hdg" min="0" max="360" step="1" placeholder="160"></div>
+        </div>
+        <div class="row">
+          <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rwy-elev" step="1" placeholder="41"></div>
+          <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rwy-slope" step="0.1" placeholder="-0.7"><small class="help">+ uphill, − downhill (T/O direction)</small></div>
+        </div>
+        <div class="row">
+          <div><label>TORA (m)</label><input type="number" inputmode="decimal" id="rwy-tora" step="1" placeholder="1936"></div>
+          <div><label>LDA (m)</label><input type="number" inputmode="decimal" id="rwy-lda" step="1" placeholder="1719"></div>
+        </div>
+        <div class="row">
+          <div><label>Surface</label>
+            <select id="rwy-surface">
+              <option value="paved">Paved</option>
+              <option value="grass">Grass</option>
+              <option value="metal">Metal</option>
+              <option value="rolled_earth">Rolled earth</option>
+              <option value="coral">Coral</option>
+            </select>
+          </div>
+          <div><label>Condition</label>
+            <select id="rwy-condition">
+              <option value="dry">Dry</option>
+              <option value="wet">Wet (+15% landing)</option>
+              <option value="long_grass">Long grass (treat as wet)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Conditions</h2>
+        <div class="row">
+          <div><label>OAT (°C)</label><input type="number" inputmode="decimal" id="cond-oat" step="1" placeholder="15"></div>
+          <div><label>QNH (hPa)</label><input type="number" inputmode="decimal" id="cond-qnh" step="1" value="1013"></div>
+        </div>
+        <div id="atmospheric-info" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>
+        <hr style="margin:10px 0">
+        <label>Wind</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <button class="btn secondary" data-wind-mode="dirspeed" id="wind-mode-ds" style="flex:1;padding:8px;font-size:13px" onclick="App.setWindMode('dirspeed')">Direction &amp; speed</button>
+          <button class="btn secondary" data-wind-mode="component" id="wind-mode-cp" style="flex:1;padding:8px;font-size:13px" onclick="App.setWindMode('component')">HW component</button>
+        </div>
+        <div id="wind-inputs"></div>
+        <div id="wind-components" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>
+      </div>
+
+      <div class="card">
+        <h2>Operation</h2>
+        <select id="perf-op">
+          <option value="private_paved_day">Private — Day (paved)</option>
+          <option value="air_transport_paved_day">Air Transport — Day (paved)</option>
+          <option value="private_grass_day">Private — Day (grass)</option>
+          <option value="air_transport_grass_day">Air Transport — Day (grass)</option>
+          <option value="all_ops_paved_night">All Ops — Night (paved)</option>
+          <option value="all_ops_grass_night">All Ops — Night (grass)</option>
+        </select>
+        <small class="help" id="perf-op-help" style="margin-top:4px"></small>
+      </div>
+
+      <div class="card">
+        <h2>Performance</h2>
+        <div id="perf-results"></div>
+        <details style="margin-top:8px"><summary>Breakdown</summary>
+          <div id="perf-breakdown"></div>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>Crosswind</h2>
+        <div id="perf-crosswind"></div>
+      </div>
+    </div>
+
     <div class="card" id="results-card">
       <h2>Results</h2>
       <div class="stat-grid" id="results"></div>
@@ -223,7 +310,7 @@
       </details>
     </div>
 
-    <div class="card">
+    <div class="card" id="envelope-card">
       <h2>CG envelope</h2>
       <div class="chart-wrap"><canvas id="env-chart"></canvas></div>
       <div class="chart-caption" id="chart-caption">green = takeoff · amber = landing · dashed line = fuel burn track</div>
@@ -283,6 +370,8 @@
 </div>
 
 <script src="chart.umd.min.js"></script>
+<script src="performance.js"></script>
+<script src="pchart-pa38.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

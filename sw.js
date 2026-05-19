@@ -1,8 +1,10 @@
-const CACHE = 'wb-v4';
+const CACHE = 'wb-v5';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
+  './performance.js',
+  './pchart-pa38.js',
   './chart.umd.min.js',
   './manifest.webmanifest',
   './icon-192.png',
