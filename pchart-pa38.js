@@ -22,21 +22,21 @@ window.PCHART_DATA['PA-38'] = {
   takeoff: {
     // d_PPD(PA, T) = a + b*PA + c*T + d_coef*PA*T + e*PA^2 + f*T^2  (metres)
     ppd_model: {
-      a: 315.397,
-      b: 0.0294126,
-      c: 2.43503,
-      d_coef: 0.000606557,
-      e: 4.58333e-6,
-      f: 0.017037,
+      a: 423.395,
+      b: 0.0418579,
+      c: 3.51943,
+      d_coef: 0.000610656,
+      e: 5.41667e-6,
+      f: 0.0251852,
     },
     // PA in feet, valid 0–4000
     // T in degC, valid -10 to +35
     valid: { pa_min: 0, pa_max: 4000, t_min: -10, t_max: 35 },
     reference_points: [
       // Used for fitting; useful for sanity check display
-      { pa: 0, t: -10, d: 290 }, { pa: 0, t: 15, d: 360 }, { pa: 0, t: 35, d: 420 },
-      { pa: 2000, t: -10, d: 360 }, { pa: 2000, t: 15, d: 450 }, { pa: 2000, t: 35, d: 540 },
-      { pa: 4000, t: -10, d: 460 }, { pa: 4000, t: 15, d: 580 }, { pa: 4000, t: 35, d: 700 },
+      { pa: 0, t: -10, d: 390 }, { pa: 0, t: 15, d: 480 }, { pa: 0, t: 35, d: 580 },
+      { pa: 2000, t: -10, d: 485 }, { pa: 2000, t: 15, d: 610 }, { pa: 2000, t: 35, d: 720 },
+      { pa: 4000, t: -10, d: 620 }, { pa: 4000, t: 15, d: 770 }, { pa: 4000, t: 35, d: 920 },
     ],
   },
 

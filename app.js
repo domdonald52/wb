@@ -514,7 +514,7 @@ const App = (function(){
           <div>
             <label>Flight duration (hours)</label>
             <input type="number" inputmode="decimal" id="in-dur" value="${fc.duration}" min="0" max="10" step="0.25">
-            <small class="help">used to compute landing weight &amp; CG. Burn: ${fmt(fc.duration * ac.burn_rate, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(fc.duration * ac.burn_rate * u(ac).fuel_density, 1)} ${u(ac).w}</strong></small>
+            <small class="help">Burn: ${fmt(fc.duration * ac.burn_rate, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(fc.duration * ac.burn_rate * u(ac).fuel_density, 1)} ${u(ac).w}</strong></small>
           </div>
         </div>
       `;
@@ -523,7 +523,7 @@ const App = (function(){
         fc.duration = parseFloat(e.target.value) || 0;
         const burnVol = fc.duration * ac.burn_rate;
         const burnWt = burnVol * u(ac).fuel_density;
-        e.target.nextElementSibling.innerHTML = `used to compute landing weight &amp; CG. Burn: ${fmt(burnVol, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(burnWt, 1)} ${u(ac).w}</strong>`;
+        e.target.nextElementSibling.innerHTML = `Burn: ${fmt(burnVol, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(burnWt, 1)} ${u(ac).w}</strong>`;
         update();
       });
     } else if (mode === 'reverse'){
@@ -1128,7 +1128,7 @@ const App = (function(){
     const da = P.densityAltitude(pa, oat);
     const aiEl = document.getElementById('atmospheric-info');
     if (aiEl){
-      aiEl.innerHTML = `PA: <strong>${pa.toFixed(0)}'</strong> · ISA: <strong>${isa.toFixed(0)}°C</strong> · DA: <strong>${da.toFixed(0)}'</strong>${c.oat===null?' <em>(using ISA — enter OAT to override)</em>':''}`;
+      aiEl.innerHTML = `PA: <strong>${pa.toFixed(0)}'</strong> · ISA: <strong>${isa.toFixed(0)}°C</strong> · Density Altitude: <strong>${da.toFixed(0)}'</strong>${c.oat===null?' <em>(using ISA — enter OAT to override)</em>':''}`;
     }
 
     const wet = (r.condition === 'wet' || r.condition === 'long_grass');
