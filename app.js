@@ -161,6 +161,7 @@ const App = (function(){
     if (ac.pchart_id === undefined) ac.pchart_id = null;
     if (ac.crosswind_demonstrated_kt === undefined) ac.crosswind_demonstrated_kt = null;
     if (ac.crosswind_club_kt === undefined) ac.crosswind_club_kt = null;
+    if (ac.fuel_total === undefined){ ac.fuel_total = ac.usable_fuel; ac.fuel_unusable = 0; }
     // One-time fix-up: the default PA-38 demo aircraft should be bound to the PA-38 P-chart.
     // Existing installs from before P-chart support won't have this set; restore it now
     // without disturbing user-edited fields.
@@ -506,9 +507,9 @@ const App = (function(){
       host.innerHTML = `
         <div class="row">
           <div>
-            <label>Fuel on board (${u(ac).vol})</label>
+            <label>Usable fuel on board (${u(ac).vol})</label>
             <input type="number" inputmode="decimal" id="in-fuel" value="${fc.fuel}" min="0" max="${ac.usable_fuel}" step="0.5">
-            <small class="help">tank ${fmt(ac.usable_fuel,1)} ${u(ac).vol} usable · burn ${fmt(ac.burn_rate,1)} ${u(ac).flow}</small>
+            <small class="help">tank ${fmt(ac.usable_fuel,1)} ${u(ac).vol} usable · burn ${fmt(ac.burn_rate,1)} ${u(ac).flow}${(ac.fuel_unusable||0) > 0 ? ` · dipstick − ${fmt(ac.fuel_unusable,1)} = usable` : ''}</small>
           </div>
           <div>
             <label>Flight duration (hours)</label>
@@ -530,15 +531,18 @@ const App = (function(){
       const r = calcReverse(ac);
       const limitedBy = r.bestFuel >= r.maxFuelByMtow - 0.05 ? 'MTOW' :
                        (r.bestFuel >= r.maxFuelByTank - 0.05 ? 'tank capacity' : 'CG envelope');
+      const unusable = ac.fuel_unusable || 0;
+      const dipstick = r.bestFuel + unusable;
       host.innerHTML = `
         <p style="margin:0 0 8px;color:var(--muted);font-size:13px">
-          Given your station weights, the maximum fuel you can carry is:
+          Given your station weights, the maximum <strong>usable</strong> fuel you can carry is:
         </p>
         <div class="endurance-note">
-          <div>Max fuel: <span class="big">${fmt(r.bestFuel, 1)} ${u(ac).vol}</span> &nbsp; (${fmt(r.bestFuel * r.fuelDens, 0)} ${u(ac).w})</div>
+          <div>Max usable: <span class="big">${fmt(r.bestFuel, 1)} ${u(ac).vol}</span> &nbsp; (${fmt(r.bestFuel * r.fuelDens, 0)} ${u(ac).w})</div>
+          ${unusable > 0 ? `<div style="margin-top:4px;font-size:13px">Dipstick level: <strong>${fmt(dipstick, 1)} ${u(ac).vol}</strong> &nbsp;<span style="color:var(--muted);font-size:11px">(includes ${fmt(unusable, 1)} ${u(ac).vol} unusable)</span></div>` : ''}
           <div style="margin-top:6px">Endurance to dry: <span class="big">${fmt(r.bestEndurance, 1)} h</span></div>
           <div>Endurance after ${ac.reserve_minutes}-min reserve: <span class="big">${fmt(r.usableEndurance, 1)} h</span></div>
-          <small class="help" style="margin-top:6px">Limited by: ${limitedBy}</small>
+          <small class="help" style="margin-top:6px">Limited by: ${limitedBy}. Unusable fuel is already in the empty weight from the weighing report.</small>
         </div>
       `;
       // also set the forward inputs so the chart shows the max-fuel case
@@ -742,8 +746,10 @@ const App = (function(){
 
     const allArms = env.flatMap(p => [p.fwd, p.aft]).concat(ml.legResults.flatMap(l => [l.startCG, l.endCG]));
     const allWeights = env.flatMap(p => [p.w]).concat(ml.legResults.flatMap(l => [l.startW, l.endW]));
-    const minA = Math.min(...allArms) - (ac.units === 'metric' ? 50 : 1);
-    const maxA = Math.max(...allArms) + (ac.units === 'metric' ? 50 : 1);
+    const armSpan = Math.max(...allArms) - Math.min(...allArms);
+    const armPad = Math.max(armSpan * 0.15, ac.units === 'metric' ? 50 : 1);
+    const minA = Math.min(...allArms) - armPad;
+    const maxA = Math.max(...allArms) + armPad;
     const minW = Math.min(...allWeights) * 0.92;
     const maxW = Math.max(...allWeights) * 1.05;
 
@@ -812,8 +818,10 @@ const App = (function(){
     const poly = fwdPts.concat(aftPts.slice().reverse()).concat([fwdPts[0]]);
 
     const allArms = env.flatMap(p => [p.fwd, p.aft]).concat([r.cg_to, r.cg_ld]);
-    const minA = Math.min(...allArms) - (ac.units === 'metric' ? 50 : 1);
-    const maxA = Math.max(...allArms) + (ac.units === 'metric' ? 50 : 1);
+    const armSpan = Math.max(...allArms) - Math.min(...allArms);
+    const armPad = Math.max(armSpan * 0.15, ac.units === 'metric' ? 50 : 1);
+    const minA = Math.min(...allArms) - armPad;
+    const maxA = Math.max(...allArms) + armPad;
 
     const data = {
       datasets: [
@@ -1064,7 +1072,7 @@ const App = (function(){
       host.innerHTML = `
         <div class="row">
           <div><label>Direction (°M)</label><input type="number" inputmode="decimal" id="wind-dir" min="0" max="360" step="10" value="${perfInput.wind.dir || ''}"><small class="help">degrees magnetic (match runway hdg)</small></div>
-          <div><label>Speed (kt)</label><input type="number" inputmode="decimal" id="wind-spd" min="0" step="1" value="${perfInput.wind.speed || ''}"></div>
+          <div><label>Speed (kt)</label><input type="number" inputmode="decimal" id="wind-spd" min="0" step="1" value="${perfInput.wind.speed || ''}"><small class="help">wind speed in knots</small></div>
         </div>
       `;
       document.getElementById('wind-dir').oninput = e => { perfInput.wind.dir = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
@@ -1288,7 +1296,7 @@ const App = (function(){
       reg: '', type: '', units: 'imperial',
       empty_weight: 0, empty_arm: 0,
       fuel_lb_per_gal: 6.0, fuel_kg_per_litre: 0.72,
-      usable_fuel: 0, fuel_arm: 0, burn_rate: 0,
+      usable_fuel: 0, fuel_total: 0, fuel_unusable: 0, fuel_arm: 0, burn_rate: 0,
       mtow: 0, mlw: 0, mzfw: null, reserve_minutes: 30,
       scenarios: [],
       pchart_id: null,
@@ -1344,7 +1352,10 @@ const App = (function(){
       <hr>
       <h3 style="font-size:14px;margin:4px 0 8px">Fuel</h3>
       <div class="row">
-        <div><label>Usable fuel (${vU})</label><input type="number" inputmode="decimal" id="cfg-uf" value="${a.usable_fuel}" step="0.5"></div>
+        <div><label>Total capacity (${vU})</label><input type="number" inputmode="decimal" id="cfg-uf-total" value="${(a.fuel_total ?? (a.usable_fuel + (a.fuel_unusable||0)))}" step="0.5"><small class="help" id="cfg-usable-info">usable = total − unusable</small></div>
+        <div><label>Unusable (${vU})</label><input type="number" inputmode="decimal" id="cfg-uf-unusable" value="${a.fuel_unusable ?? 0}" step="0.1"><small class="help">included in empty weight</small></div>
+      </div>
+      <div class="row">
         <div><label>Fuel arm (${aU})</label><input type="number" inputmode="decimal" id="cfg-fa" value="${a.fuel_arm}" step="0.01"></div>
         <div class="narrow"><label>Burn (${fU})</label><input type="number" inputmode="decimal" id="cfg-burn" value="${a.burn_rate}" step="0.1"></div>
       </div>
@@ -1389,6 +1400,8 @@ const App = (function(){
         if (a.mlw) a.mlw = Math.round(a.mlw * kw);
         if (a.mzfw) a.mzfw = Math.round(a.mzfw * kw);
         a.usable_fuel  = +(a.usable_fuel  * kv).toFixed(1);
+        if (a.fuel_total !== undefined) a.fuel_total = +(a.fuel_total * kv).toFixed(1);
+        if (a.fuel_unusable !== undefined) a.fuel_unusable = +(a.fuel_unusable * kv).toFixed(1);
         a.fuel_arm     = +(a.fuel_arm     * ka).toFixed(1);
         a.burn_rate    = +(a.burn_rate    * kv).toFixed(1);
         a.stations.forEach(s => {
@@ -1409,6 +1422,18 @@ const App = (function(){
       renderStationEditors(a);
       renderEnvEditor(a);
     };
+    const updateUsableHint = () => {
+      const t = parseFloat(document.getElementById('cfg-uf-total')?.value) || 0;
+      const u = parseFloat(document.getElementById('cfg-uf-unusable')?.value) || 0;
+      const hint = document.getElementById('cfg-usable-info');
+      if (hint){
+        const vU = a.units === 'metric' ? 'L' : 'gal';
+        hint.innerHTML = `usable = <strong>${Math.max(0, t - u).toFixed(1)} ${vU}</strong> (total − unusable)`;
+      }
+    };
+    document.getElementById('cfg-uf-total')?.addEventListener('input', updateUsableHint);
+    document.getElementById('cfg-uf-unusable')?.addEventListener('input', updateUsableHint);
+    updateUsableHint();
     renderStationEditors(a);
     renderEnvEditor(a);
   }
@@ -1491,7 +1516,11 @@ const App = (function(){
     const mzfw = parseFloat(document.getElementById('cfg-mzfw').value);
     a.mzfw = isNaN(mzfw) ? null : mzfw;
     a.reserve_minutes = parseFloat(document.getElementById('cfg-reserve').value) || 30;
-    a.usable_fuel = parseFloat(document.getElementById('cfg-uf').value) || 0;
+    const fuelTotal = parseFloat(document.getElementById('cfg-uf-total').value) || 0;
+    const fuelUnusable = parseFloat(document.getElementById('cfg-uf-unusable').value) || 0;
+    a.fuel_total = fuelTotal;
+    a.fuel_unusable = fuelUnusable;
+    a.usable_fuel = Math.max(0, fuelTotal - fuelUnusable);
     a.fuel_arm = parseFloat(document.getElementById('cfg-fa').value) || 0;
     a.burn_rate = parseFloat(document.getElementById('cfg-burn').value) || 0;
     // Performance fields
