@@ -72,6 +72,10 @@
   .tab-bar{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;margin-bottom:12px}
   .tab-bar button{flex:1;background:transparent;border:0;color:var(--muted);padding:8px 6px;font-size:13px;font-weight:600;cursor:pointer;border-radius:8px;font-family:inherit}
   .tab-bar button.active{background:var(--accent-2);color:#fff}
+  .tab-bar button[data-mode="performance"].active{background:#d97706;color:#fff}
+  /* Performance card styling — amber accent to distinguish from blue W&B cards */
+  #perf-cards .card{border-color:rgba(217,119,6,.45)}
+  #perf-cards .card h2{color:#fbbf24}
   .chart-wrap{position:relative;height:300px;margin-top:6px}
   .chart-caption{font-size:11px;color:var(--muted);text-align:center;margin-top:4px}
   .station{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px}
@@ -218,12 +222,13 @@
     <div id="perf-cards" class="hidden">
       <div class="card">
         <h2>Runway <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
-        <div id="recent-runways-row" style="margin-bottom:8px;display:none">
-          <label>Recent runways</label>
-          <div style="display:flex;gap:6px">
-            <select id="recent-rwy-select" style="flex:1" onchange="App.loadRecentRunway(this.value)"><option value="">— recall a runway —</option></select>
-            <button class="icon-btn" onclick="App.clearRecentRunways()" title="Clear recent" aria-label="Clear recent">🗑</button>
+        <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-end">
+          <div style="flex:1">
+            <label>Saved runway</label>
+            <select id="saved-rwy-select" onchange="App.loadSavedRunway(this.value)"><option value="">— enter a new runway below —</option></select>
           </div>
+          <button class="icon-btn" id="rwy-save-btn" onclick="App.saveCurrentRunway()" title="Save current runway" aria-label="Save current runway">💾</button>
+          <button class="icon-btn" onclick="App.openManageRunways()" title="Manage runways" aria-label="Manage runways">⚙</button>
         </div>
         <div class="row">
           <div style="flex:2"><label>Designator</label><input type="text" id="rwy-ident" placeholder="e.g. NZWN 16"><small class="help">runway identifier</small></div>
@@ -254,6 +259,17 @@
               <option value="long_grass">Long grass (treat as wet)</option>
             </select>
           </div>
+        </div>
+        <div class="row">
+          <div><label>Aerodrome Group (NZ)</label>
+            <select id="rwy-group">
+              <option value="">— not set —</option>
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+              <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+            </select>
+            <small class="help">from AIP aerodrome chart (AC139-7)</small>
+          </div>
+          <div></div>
         </div>
       </div>
 
@@ -336,6 +352,22 @@
     </div>
     <div id="manage-list"></div>
     <button class="btn secondary" onclick="App.newAircraft(); App.closeManageAircraft();" style="margin-top:8px">+ Add new aircraft</button>
+  </div>
+</div>
+
+<!-- Manage runways -->
+<div class="modal-bg hidden" id="manage-runways-modal">
+  <div class="modal">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <h3 style="margin:0">Saved runways</h3>
+      <button class="icon-btn" style="margin-left:auto" onclick="App.closeManageRunways()" aria-label="Close">✕</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">⚠ Always verify against current AIP before each flight.</div>
+    <div id="manage-runways-list"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn secondary" onclick="App.exportRunways()" style="flex:1;min-width:120px">Export…</button>
+      <button class="btn secondary" onclick="App.importRunways()" style="flex:1;min-width:120px">Import…</button>
+    </div>
   </div>
 </div>
 

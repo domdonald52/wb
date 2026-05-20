@@ -121,6 +121,8 @@ const DEFAULT_FLEET = [
 const STORAGE_KEY = 'wb_fleet_v1';
 const SELECTED_KEY = 'wb_selected_v1';
 const RECENT_RUNWAYS_KEY = 'wb_recent_runways_v1';
+const RUNWAYS_KEY = 'wb_runways_v1';
+const SELECTED_RUNWAY_KEY = 'wb_selected_runway_v1';
 const MAX_RECENT_RUNWAYS = 5;
 
 const App = (function(){
@@ -131,7 +133,7 @@ const App = (function(){
   let fuelInput = {};       // {ac_id: {fuel: x, duration: y}}
   let legsInput = {};       // {ac_id: [{name, duration, uplift_after}]}
   let perfInput = {         // performance tab inputs (single, not per-aircraft)
-    runway: { ident: '', heading: 160, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: 'dry' },
+    runway: { ident: '', heading: 160, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: 'dry', group: null },
     conditions: { oat: null, qnh: 1013 },  // oat=null means default to ISA at elev
     wind: { mode: 'dirspeed', dir: 0, speed: 0, headwind_component: 0 },
     op_type: 'private',     // 'private' or 'air_transport'
@@ -139,6 +141,9 @@ const App = (function(){
     use_landing_weight_for_landing: true,
   };
   let recentRunways = [];
+  let runways = [];                  // user-saved runway database
+  let selectedRunwayId = null;       // currently selected saved runway on Perf tab
+  let editingRunwayId = null;        // runway being edited in modal
   let chart = null;
   let editingId = null;     // id of aircraft being edited (null = new)
 
@@ -161,6 +166,7 @@ const App = (function(){
     if (ac.pchart_id === undefined) ac.pchart_id = null;
     if (ac.crosswind_demonstrated_kt === undefined) ac.crosswind_demonstrated_kt = null;
     if (ac.crosswind_club_kt === undefined) ac.crosswind_club_kt = null;
+    if (ac.group === undefined) ac.group = null;
     if (ac.fuel_total === undefined){ ac.fuel_total = ac.usable_fuel; ac.fuel_unusable = 0; }
     // One-time fix-up: the default PA-38 demo aircraft should be bound to the PA-38 P-chart.
     // Existing installs from before P-chart support won't have this set; restore it now
@@ -170,6 +176,12 @@ const App = (function(){
       if (ac.crosswind_demonstrated_kt == null) ac.crosswind_demonstrated_kt = 15;
     }
     return ac;
+  }
+  function migrateRunway(r){
+    // ensure new fields exist; group=null means no Group check
+    if (r.group === undefined) r.group = null;
+    if (!r.id) r.id = 'rwy-' + Math.random().toString(36).slice(2, 9);
+    return r;
   }
   function load(){
     try {
@@ -184,10 +196,25 @@ const App = (function(){
       const rr = localStorage.getItem(RECENT_RUNWAYS_KEY);
       if (rr) recentRunways = JSON.parse(rr);
     } catch(e){ recentRunways = []; }
+    // Saved runways database
+    try {
+      const rd = localStorage.getItem(RUNWAYS_KEY);
+      if (rd){
+        runways = JSON.parse(rd).map(migrateRunway);
+      } else {
+        // First time: migrate existing recent runways into the saved list
+        runways = recentRunways.map(r => migrateRunway(JSON.parse(JSON.stringify(r))));
+        saveRunways();
+      }
+    } catch(e){ runways = []; }
+    selectedRunwayId = localStorage.getItem(SELECTED_RUNWAY_KEY) || null;
+    if (selectedRunwayId && !runways.find(r => r.id === selectedRunwayId)) selectedRunwayId = null;
   }
   function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(fleet)); }
   function saveSelected(){ if (selectedId) localStorage.setItem(SELECTED_KEY, selectedId); }
   function saveRecentRunways(){ localStorage.setItem(RECENT_RUNWAYS_KEY, JSON.stringify(recentRunways)); }
+  function saveRunways(){ localStorage.setItem(RUNWAYS_KEY, JSON.stringify(runways)); }
+  function saveSelectedRunway(){ if (selectedRunwayId) localStorage.setItem(SELECTED_RUNWAY_KEY, selectedRunwayId); else localStorage.removeItem(SELECTED_RUNWAY_KEY); }
 
   // ---- W&B math ----
   function interpLimit(envelope, w, side){
@@ -1002,6 +1029,7 @@ const App = (function(){
     document.getElementById('rwy-lda').value = r.lda ?? '';
     document.getElementById('rwy-surface').value = r.surface || 'paved';
     document.getElementById('rwy-condition').value = r.condition || 'dry';
+    document.getElementById('rwy-group').value = r.group ?? '';
 
     document.getElementById('cond-oat').value = perfInput.conditions.oat ?? '';
     document.getElementById('cond-qnh').value = perfInput.conditions.qnh ?? 1013;
@@ -1009,25 +1037,24 @@ const App = (function(){
     document.getElementById('perf-op-type').value = perfInput.op_type;
     document.getElementById('perf-op-time').value = perfInput.op_time;
 
-    // Recent runways dropdown
-    const rrRow = document.getElementById('recent-runways-row');
-    if (recentRunways.length > 0){
-      rrRow.style.display = '';
-      const sel = document.getElementById('recent-rwy-select');
-      sel.innerHTML = '<option value="">— recall a runway —</option>' +
-        recentRunways.map((r, i) => `<option value="${i}">${r.ident || '(no ident)'} · elev ${r.elev}\u2032 · TORA ${r.tora}m</option>`).join('');
-      sel.value = '';
-    } else {
-      rrRow.style.display = 'none';
-    }
+    // Saved runways picker
+    renderSavedRunwaysPicker();
 
     renderWindInputs();
     bindPerfHandlers();
     computeAndRenderPerf();
   }
 
+  function renderSavedRunwaysPicker(){
+    const sel = document.getElementById('saved-rwy-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— enter a new runway below —</option>' +
+      runways.map(rw => `<option value="${rw.id}" ${rw.id===selectedRunwayId?'selected':''}>${rw.ident || '(no ident)'} · ${rw.surface||'paved'} · TORA ${rw.tora||'?'}m</option>`).join('');
+    sel.value = selectedRunwayId || '';
+  }
+
   function bindPerfHandlers(){
-    const fields = ['rwy-ident','rwy-hdg','rwy-elev','rwy-slope','rwy-tora','rwy-lda','rwy-surface','rwy-condition','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
+    const fields = ['rwy-ident','rwy-hdg','rwy-elev','rwy-slope','rwy-tora','rwy-lda','rwy-surface','rwy-condition','rwy-group','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
     fields.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -1046,6 +1073,8 @@ const App = (function(){
     r.lda = parseFloat(document.getElementById('rwy-lda').value) || 0;
     r.surface = document.getElementById('rwy-surface').value;
     r.condition = document.getElementById('rwy-condition').value;
+    const grpVal = document.getElementById('rwy-group').value;
+    r.group = grpVal === '' ? null : parseInt(grpVal, 10);
     const oat_val = document.getElementById('cond-oat').value;
     perfInput.conditions.oat = oat_val === '' ? null : parseFloat(oat_val);
     perfInput.conditions.qnh = parseFloat(document.getElementById('cond-qnh').value) || 1013;
@@ -1233,14 +1262,16 @@ const App = (function(){
         </table>
       `;
 
-      // Save this runway to recents on a successful computation with meaningful data
-      if (r.ident && r.tora > 0){
-        // Don't spam — only add if it differs from the most recent
-        const top = recentRunways[0];
-        if (!top || top.ident !== r.ident || top.elev !== r.elev || top.tora !== r.tora){
-          // Defer slightly to avoid spamming on every keystroke
-          clearTimeout(window._rrSaveT);
-          window._rrSaveT = setTimeout(addCurrentRunwayToRecent, 2000);
+      // If a saved runway is currently selected, auto-save edits back to it
+      if (selectedRunwayId){
+        const rw = runways.find(x => x.id === selectedRunwayId);
+        if (rw){
+          clearTimeout(window._rwSaveT);
+          window._rwSaveT = setTimeout(() => {
+            Object.assign(rw, { ident: r.ident, heading: r.heading, elev: r.elev, slope: r.slope, tora: r.tora, lda: r.lda, surface: r.surface, condition: r.condition, group: r.group });
+            saveRunways();
+            renderSavedRunwaysPicker();
+          }, 2000);
         }
       }
     }
@@ -1264,29 +1295,147 @@ const App = (function(){
         </div>
       `;
     }
+
+    // Tailwind warning + better-runway suggestion
+    if (perfInput.wind.mode === 'dirspeed' && perfInput.wind.speed > 0 && headwind < 0){
+      // Component-mode case skipped; we only know headwind in dirspeed mode
+      let suggestion = '';
+      if (r.ident){
+        // Sibling runways: same ICAO prefix (4 chars), different direction
+        const prefix = r.ident.split(/\s+/)[0];
+        const siblings = runways.filter(rw => rw.ident && rw.ident.startsWith(prefix) && rw.id !== selectedRunwayId);
+        let best = null;
+        siblings.forEach(rw => {
+          const wc = window.Performance.windComponents(rw.heading, perfInput.wind.dir, perfInput.wind.speed);
+          if (!best || wc.headwind > best.hw){ best = { rw, hw: wc.headwind, xw: wc.crosswind }; }
+        });
+        if (best && best.hw > headwind){
+          suggestion = `<div style="margin-top:6px;font-size:12px">→ Better option: <strong>${best.rw.ident}</strong> would give HW ${best.hw.toFixed(1)} kt / XW ${best.xw.toFixed(1)} kt</div>`;
+        }
+      }
+      xwHtml += `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ Tailwind ${(-headwind).toFixed(1)} kt on this runway. ${suggestion ? '' : 'Check the reciprocal direction.'}${suggestion}</div>`;
+    }
+
+    // Group sanity check
+    if (ac.group != null && r.group != null && ac.group > r.group){
+      xwHtml += `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ Aircraft Group ${ac.group} exceeds aerodrome Group ${r.group}. Sanity check only — verify with operator / AIP.</div>`;
+    }
+
     xwHost.innerHTML = xwHtml;
   }
 
-  function loadRecentRunway(idxStr){
-    if (idxStr === '') return;
-    const idx = +idxStr;
-    if (!recentRunways[idx]) return;
-    perfInput.runway = JSON.parse(JSON.stringify(recentRunways[idx]));
+  function loadSavedRunway(id){
+    if (!id){
+      selectedRunwayId = null;
+      saveSelectedRunway();
+      return;
+    }
+    const rw = runways.find(x => x.id === id);
+    if (!rw) return;
+    selectedRunwayId = id;
+    saveSelectedRunway();
+    perfInput.runway = {
+      ident: rw.ident || '', heading: rw.heading ?? 0, elev: rw.elev ?? 0, slope: rw.slope ?? 0,
+      tora: rw.tora ?? 0, lda: rw.lda ?? 0, surface: rw.surface || 'paved',
+      condition: perfInput.runway.condition,  // keep current condition (dry/wet) since it's per-flight
+      group: rw.group ?? null,
+    };
     renderPerformance();
   }
-  function clearRecentRunways(){
-    if (!confirm('Clear the recent runways list?')) return;
-    recentRunways = [];
-    saveRecentRunways();
-    renderPerformance();
-  }
-  function addCurrentRunwayToRecent(){
+
+  function saveCurrentRunway(){
     const r = perfInput.runway;
-    if (!r.ident && !r.tora && !r.lda) return;
-    recentRunways = recentRunways.filter(x => x.ident !== r.ident);
-    recentRunways.unshift(JSON.parse(JSON.stringify(r)));
-    if (recentRunways.length > MAX_RECENT_RUNWAYS) recentRunways = recentRunways.slice(0, MAX_RECENT_RUNWAYS);
-    saveRecentRunways();
+    if (!r.ident && !r.tora && !r.lda){ alert('Enter at least a designator and TORA before saving.'); return; }
+    if (selectedRunwayId){
+      // Update existing
+      const rw = runways.find(x => x.id === selectedRunwayId);
+      if (rw){
+        Object.assign(rw, { ident: r.ident, heading: r.heading, elev: r.elev, slope: r.slope, tora: r.tora, lda: r.lda, surface: r.surface, group: r.group });
+        saveRunways();
+        renderSavedRunwaysPicker();
+        return;
+      }
+    }
+    // Insert new
+    const newRw = {
+      id: 'rwy-' + Math.random().toString(36).slice(2, 9),
+      ident: r.ident, heading: r.heading, elev: r.elev, slope: r.slope,
+      tora: r.tora, lda: r.lda, surface: r.surface, group: r.group,
+    };
+    runways.push(newRw);
+    selectedRunwayId = newRw.id;
+    saveRunways();
+    saveSelectedRunway();
+    renderSavedRunwaysPicker();
+  }
+
+  function openManageRunways(){
+    renderManageRunwaysList();
+    document.getElementById('manage-runways-modal').classList.remove('hidden');
+  }
+  function closeManageRunways(){
+    document.getElementById('manage-runways-modal').classList.add('hidden');
+  }
+  function renderManageRunwaysList(){
+    const host = document.getElementById('manage-runways-list');
+    if (!host) return;
+    if (runways.length === 0){
+      host.innerHTML = '<p style="color:var(--muted);font-size:13px">No runways saved yet. Enter runway details on the Performance tab and tap 💾 to save.</p>';
+      return;
+    }
+    host.innerHTML = runways.map(rw => `
+      <div style="display:flex;align-items:center;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+        <div style="flex:1">
+          <div style="font-weight:600">${rw.ident || '(no ident)'}</div>
+          <div style="font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums">${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'} · LDA ${rw.lda||'?'}${rw.group!=null?' · Gp '+rw.group:''}</div>
+        </div>
+        <button class="icon-btn" onclick="App.manageRunwaySelect('${rw.id}')" title="Use" aria-label="Use">✓</button>
+        <button class="icon-btn" onclick="App.manageRunwayDelete('${rw.id}')" title="Delete" aria-label="Delete">🗑</button>
+      </div>
+    `).join('');
+  }
+  function manageRunwaySelect(id){
+    loadSavedRunway(id);
+    closeManageRunways();
+  }
+  function manageRunwayDelete(id){
+    const rw = runways.find(x => x.id === id);
+    if (!rw) return;
+    if (!confirm(`Delete runway "${rw.ident || '(no ident)'}"?`)) return;
+    runways = runways.filter(x => x.id !== id);
+    if (selectedRunwayId === id){ selectedRunwayId = null; saveSelectedRunway(); }
+    saveRunways();
+    renderManageRunwaysList();
+    renderSavedRunwaysPicker();
+  }
+  function exportRunways(){
+    const blob = new Blob([JSON.stringify({ runways, exported: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'wb-runways.json'; a.click();
+    URL.revokeObjectURL(url);
+  }
+  function importRunways(){
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'application/json,.json';
+    input.onchange = e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          const incoming = Array.isArray(data) ? data : data.runways;
+          if (!Array.isArray(incoming)) throw new Error('Invalid format');
+          incoming.forEach(rw => runways.push(migrateRunway({ ...rw, id: 'rwy-' + Math.random().toString(36).slice(2, 9) })));
+          saveRunways();
+          renderManageRunwaysList();
+          renderSavedRunwaysPicker();
+          alert(`Imported ${incoming.length} runway(s).`);
+        } catch(err){ alert('Import failed: ' + err.message); }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
   }
 
   function openConfig(forNew){
@@ -1302,6 +1451,7 @@ const App = (function(){
       pchart_id: null,
       crosswind_demonstrated_kt: null,
       crosswind_club_kt: null,
+      group: null,
       stations: [{ name: 'Pilot + front pax', arm: 0, min: 0, max: 0, default: 0 }],
       envelope: [{ w: 0, fwd: 0, aft: 0 }]
     };
@@ -1373,6 +1523,16 @@ const App = (function(){
       <div class="row">
         <div><label>Demonstrated crosswind (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-demo" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="from POH"></div>
         <div><label>Club crosswind limit (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-club" value="${a.crosswind_club_kt ?? ''}" placeholder="if lower than demo"></div>
+      </div>
+      <div class="row">
+        <div><label>Aircraft Group (NZ)</label>
+          <select id="cfg-group">
+            <option value="">— not set —</option>
+            ${[1,2,3,4,5,6,7,8].map(g => `<option value="${g}" ${a.group===g?'selected':''}>${g}</option>`).join('')}
+          </select>
+          <small class="help">used for aerodrome group check (AC139-7). Aircraft can use runways of equal or higher group.</small>
+        </div>
+        <div></div>
       </div>
       <hr>
       <h3 style="font-size:14px;margin:4px 0 8px">Stations <button class="icon-btn" onclick="App.addStation()" aria-label="Add station">+</button></h3>
@@ -1530,6 +1690,8 @@ const App = (function(){
     a.crosswind_demonstrated_kt = isNaN(xwDemo) ? null : xwDemo;
     const xwClub = parseFloat(document.getElementById('cfg-xw-club')?.value);
     a.crosswind_club_kt = isNaN(xwClub) ? null : xwClub;
+    const grpVal = document.getElementById('cfg-group')?.value;
+    a.group = grpVal === '' || grpVal === undefined ? null : parseInt(grpVal, 10);
 
     if (editingId){
       const i = fleet.findIndex(x => x.id === editingId);
@@ -1674,7 +1836,9 @@ const App = (function(){
     saveScenario, loadScenario, deleteScenario,
     addLeg, removeLeg,
     printSheet,
-    setWindMode, loadRecentRunway, clearRecentRunways,
+    setWindMode, loadSavedRunway, saveCurrentRunway,
+    openManageRunways, closeManageRunways, manageRunwaySelect, manageRunwayDelete,
+    exportRunways, importRunways,
   };
 })();
 
