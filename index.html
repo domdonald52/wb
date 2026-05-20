@@ -238,7 +238,7 @@
           <div><label>LDA (m)</label><input type="number" inputmode="decimal" id="rwy-lda" step="1" placeholder="1719"></div>
         </div>
         <div class="row">
-          <div><label>Surface</label>
+          <div><label>Surface <span id="surface-label-note" style="color:var(--muted);font-size:10px;font-weight:400"></span></label>
             <select id="rwy-surface">
               <option value="paved">Paved</option>
               <option value="grass">Grass</option>
@@ -276,15 +276,22 @@
 
       <div class="card">
         <h2>Operation</h2>
-        <select id="perf-op">
-          <option value="private_paved_day">Private — Day (paved)</option>
-          <option value="air_transport_paved_day">Air Transport — Day (paved)</option>
-          <option value="private_grass_day">Private — Day (grass)</option>
-          <option value="air_transport_grass_day">Air Transport — Day (grass)</option>
-          <option value="all_ops_paved_night">All Ops — Night (paved)</option>
-          <option value="all_ops_grass_night">All Ops — Night (grass)</option>
-        </select>
-        <small class="help" id="perf-op-help" style="margin-top:4px"></small>
+        <div class="row">
+          <div><label>Type</label>
+            <select id="perf-op-type">
+              <option value="private">Private</option>
+              <option value="air_transport">Air Transport</option>
+            </select>
+          </div>
+          <div><label>Time of day</label>
+            <select id="perf-op-time">
+              <option value="day">Day</option>
+              <option value="night">Night</option>
+            </select>
+          </div>
+        </div>
+        <div id="perf-op-derived" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+        <div id="perf-op-warning" style="margin-top:6px"></div>
       </div>
 
       <div class="card">

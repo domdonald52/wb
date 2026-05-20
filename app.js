@@ -134,8 +134,9 @@ const App = (function(){
     runway: { ident: '', heading: 160, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: 'dry' },
     conditions: { oat: null, qnh: 1013 },  // oat=null means default to ISA at elev
     wind: { mode: 'dirspeed', dir: 0, speed: 0, headwind_component: 0 },
-    operation: 'private_paved_day',
-    use_landing_weight_for_landing: true,  // pilot-set toggle
+    op_type: 'private',     // 'private' or 'air_transport'
+    op_time: 'day',         // 'day' or 'night'
+    use_landing_weight_for_landing: true,
   };
   let recentRunways = [];
   let chart = null;
@@ -160,6 +161,13 @@ const App = (function(){
     if (ac.pchart_id === undefined) ac.pchart_id = null;
     if (ac.crosswind_demonstrated_kt === undefined) ac.crosswind_demonstrated_kt = null;
     if (ac.crosswind_club_kt === undefined) ac.crosswind_club_kt = null;
+    // One-time fix-up: the default PA-38 demo aircraft should be bound to the PA-38 P-chart.
+    // Existing installs from before P-chart support won't have this set; restore it now
+    // without disturbing user-edited fields.
+    if (ac.id === 'pa38-demo' && !ac.pchart_id){
+      ac.pchart_id = 'PA-38';
+      if (ac.crosswind_demonstrated_kt == null) ac.crosswind_demonstrated_kt = 15;
+    }
     return ac;
   }
   function load(){
@@ -950,6 +958,22 @@ const App = (function(){
   }
 
   // ---- performance ----
+
+  // Derive the canonical operation key used by P-chart data, from op_type, op_time, surface
+  function deriveOperationKey(op_type, op_time, surface){
+    // surface 'paved' / 'grass' / other (metal, coral, etc. treat as grass for safety)
+    const grass = (surface !== 'paved');
+    if (op_time === 'night'){
+      // Night = "All Ops Night" line (no Private/AT distinction at night per CASO 4)
+      return grass ? 'all_ops_grass_night' : 'all_ops_paved_night';
+    }
+    if (op_type === 'air_transport'){
+      return grass ? 'air_transport_grass_day' : 'air_transport_paved_day';
+    }
+    // Private day
+    return grass ? 'private_grass_day' : 'private_paved_day';
+  }
+
   function renderPerformance(){
     const ac = fleet.find(a => a.id === selectedId);
     if (!ac) return;
@@ -965,12 +989,11 @@ const App = (function(){
     document.getElementById('rwy-surface').value = r.surface || 'paved';
     document.getElementById('rwy-condition').value = r.condition || 'dry';
 
-    // Bind conditions
     document.getElementById('cond-oat').value = perfInput.conditions.oat ?? '';
     document.getElementById('cond-qnh').value = perfInput.conditions.qnh ?? 1013;
 
-    // Operation selector
-    document.getElementById('perf-op').value = perfInput.operation;
+    document.getElementById('perf-op-type').value = perfInput.op_type;
+    document.getElementById('perf-op-time').value = perfInput.op_time;
 
     // Recent runways dropdown
     const rrRow = document.getElementById('recent-runways-row');
@@ -990,7 +1013,7 @@ const App = (function(){
   }
 
   function bindPerfHandlers(){
-    const fields = ['rwy-ident','rwy-hdg','rwy-elev','rwy-slope','rwy-tora','rwy-lda','rwy-surface','rwy-condition','cond-oat','cond-qnh','perf-op'];
+    const fields = ['rwy-ident','rwy-hdg','rwy-elev','rwy-slope','rwy-tora','rwy-lda','rwy-surface','rwy-condition','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
     fields.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -1012,7 +1035,8 @@ const App = (function(){
     const oat_val = document.getElementById('cond-oat').value;
     perfInput.conditions.oat = oat_val === '' ? null : parseFloat(oat_val);
     perfInput.conditions.qnh = parseFloat(document.getElementById('cond-qnh').value) || 1013;
-    perfInput.operation = document.getElementById('perf-op').value;
+    perfInput.op_type = document.getElementById('perf-op-type').value;
+    perfInput.op_time = document.getElementById('perf-op-time').value;
     computeAndRenderPerf();
   }
 
@@ -1096,20 +1120,51 @@ const App = (function(){
     const wet = (r.condition === 'wet' || r.condition === 'long_grass');
 
     const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
-    const opHelp = document.getElementById('perf-op-help');
+
+    // Derive the canonical operation key from the user's choices + runway surface
+    const opKey = deriveOperationKey(perfInput.op_type, perfInput.op_time, r.surface);
+    const surfaceIsGrass = (r.surface !== 'paved');
+    const opLabelMap = {
+      private_paved_day:        'Private — Paved — Day',
+      air_transport_paved_day:  'Air Transport — Paved — Day',
+      private_grass_day:        'Private — Grass — Day',
+      air_transport_grass_day:  'Air Transport — Grass — Day',
+      all_ops_paved_night:      'All Ops — Paved — Night',
+      all_ops_grass_night:      'All Ops — Grass — Night',
+    };
+
+    // Annotate the Surface label
+    const sln = document.getElementById('surface-label-note');
+    if (sln) sln.textContent = pdata ? '· feeds Operation' : '· used in calc (AFM mode)';
+
+    // Show derived line
+    const opDerived = document.getElementById('perf-op-derived');
+    if (opDerived){
+      opDerived.innerHTML = pdata
+        ? `→ P-chart line: <strong>${opLabelMap[opKey]}</strong> (auto-set from surface)`
+        : `→ no P-chart data — Surface selection is used directly`;
+    }
+
+    // Air Transport warning
+    const opWarn = document.getElementById('perf-op-warning');
+    if (opWarn){
+      if (perfInput.op_type === 'air_transport'){
+        opWarn.innerHTML = `<div class="banner warn" style="margin:0;font-size:12px">⚠ Air Transport operation selected. This app is normally used for private GA — confirm Air Transport is correct for this flight.</div>`;
+      } else {
+        opWarn.innerHTML = '';
+      }
+    }
 
     let to_result = null, ld_result = null, method = 'none';
     let methodNote = '';
 
     if (pdata){
       method = 'pchart';
-      methodNote = `P-chart method — ${pdata.source}. ${pdata.precision}`;
-      to_result = P.pchartTakeoffDistance(pdata, pa, oat, perfInput.operation, r.slope, headwind, wet);
-      ld_result = P.pchartLandingDistance(pdata, r.elev, perfInput.operation, r.slope, headwind, wet);
-      if (opHelp) opHelp.textContent = 'All 6 operation lines supported via P-chart.';
+      methodNote = `Method: <strong>P-chart</strong> (${pdata.source}). Inputs: pressure altitude, OAT, slope, wind, operation line (incl. surface). The Surface dropdown does NOT directly feed the calc — it sets which Operation line is used.`;
+      to_result = P.pchartTakeoffDistance(pdata, pa, oat, opKey, r.slope, headwind, wet);
+      ld_result = P.pchartLandingDistance(pdata, r.elev, opKey, r.slope, headwind, wet);
     } else {
       method = 'none';
-      if (opHelp) opHelp.textContent = `No P-chart data configured for ${ac.reg}. AFM-based fallback coming in a later update.`;
     }
 
     const host = document.getElementById('perf-results');
@@ -1141,7 +1196,7 @@ const App = (function(){
       }
 
       host.innerHTML =
-        `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">${methodNote}</div>` +
+        `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
         windWarning +
         stat('Takeoff distance required', to_result.distance, r.tora, toOK, 'TORA') +
         stat('Landing distance required', ld_result.distance, r.lda, ldOK, 'LDA');
