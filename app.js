@@ -1212,8 +1212,8 @@ const App = (function(){
       host.innerHTML =
         `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
         windWarning +
-        stat('Takeoff distance required', to_result.distance, r.tora, toOK, 'TORA') +
-        stat('Landing distance required', ld_result.distance, r.lda, ldOK, 'LDA');
+        stat('T/O distance to 50\u2032 (max performance)', to_result.distance, r.tora, toOK, 'TORA') +
+        stat('Landing distance from 50\u2032 (full flap)', ld_result.distance, r.lda, ldOK, 'LDA');
 
       const fmt2 = x => x.toFixed(3);
       document.getElementById('perf-breakdown').innerHTML = `
