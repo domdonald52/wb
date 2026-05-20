@@ -513,12 +513,18 @@ const App = (function(){
           <div>
             <label>Flight duration (hours)</label>
             <input type="number" inputmode="decimal" id="in-dur" value="${fc.duration}" min="0" max="10" step="0.25">
-            <small class="help">used to compute landing weight &amp; CG</small>
+            <small class="help">used to compute landing weight &amp; CG. Burn: ${fmt(fc.duration * ac.burn_rate, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(fc.duration * ac.burn_rate * u(ac).fuel_density, 1)} ${u(ac).w}</strong></small>
           </div>
         </div>
       `;
       host.querySelector('#in-fuel').addEventListener('input', e => { fc.fuel = parseFloat(e.target.value) || 0; update(); });
-      host.querySelector('#in-dur').addEventListener('input', e => { fc.duration = parseFloat(e.target.value) || 0; update(); });
+      host.querySelector('#in-dur').addEventListener('input', e => {
+        fc.duration = parseFloat(e.target.value) || 0;
+        const burnVol = fc.duration * ac.burn_rate;
+        const burnWt = burnVol * u(ac).fuel_density;
+        e.target.nextElementSibling.innerHTML = `used to compute landing weight &amp; CG. Burn: ${fmt(burnVol, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(burnWt, 1)} ${u(ac).w}</strong>`;
+        update();
+      });
     } else if (mode === 'reverse'){
       titleEl.textContent = 'Maximum fuel';
       const r = calcReverse(ac);
@@ -1057,7 +1063,7 @@ const App = (function(){
     if (perfInput.wind.mode === 'dirspeed'){
       host.innerHTML = `
         <div class="row">
-          <div><label>Direction (°)</label><input type="number" inputmode="decimal" id="wind-dir" min="0" max="360" step="10" value="${perfInput.wind.dir || ''}"></div>
+          <div><label>Direction (°M)</label><input type="number" inputmode="decimal" id="wind-dir" min="0" max="360" step="10" value="${perfInput.wind.dir || ''}"><small class="help">degrees magnetic (match runway hdg)</small></div>
           <div><label>Speed (kt)</label><input type="number" inputmode="decimal" id="wind-spd" min="0" step="1" value="${perfInput.wind.speed || ''}"></div>
         </div>
       `;
@@ -1368,7 +1374,41 @@ const App = (function(){
   }
 
   function bindConfigEvents(a){
-    document.getElementById('cfg-units').onchange = e => { a.units = e.target.value; document.getElementById('config-body').innerHTML = configForm(a); bindConfigEvents(a); renderStationEditors(a); renderEnvEditor(a); };
+    document.getElementById('cfg-units').onchange = e => {
+      const oldUnits = a.units;
+      const newUnits = e.target.value;
+      if (oldUnits !== newUnits){
+        const toMetric = (newUnits === 'metric');
+        const kw = toMetric ? 0.4535924 : 1/0.4535924;    // lb→kg or kg→lb
+        const ka = toMetric ? 25.4 : 1/25.4;              // in→mm or mm→in
+        const kv = toMetric ? 3.785412 : 1/3.785412;      // gal→L or L→gal
+        const kf = toMetric ? (1/(1/0.4535924 * 3.785412)) : (1/0.4535924 * 3.785412); // lb/gal ↔ kg/L (1 lb/gal ≈ 0.1198 kg/L)
+        a.empty_weight = +(a.empty_weight * kw).toFixed(1);
+        a.empty_arm    = +(a.empty_arm    * ka).toFixed(1);
+        a.mtow         = Math.round(a.mtow * kw);
+        if (a.mlw) a.mlw = Math.round(a.mlw * kw);
+        if (a.mzfw) a.mzfw = Math.round(a.mzfw * kw);
+        a.usable_fuel  = +(a.usable_fuel  * kv).toFixed(1);
+        a.fuel_arm     = +(a.fuel_arm     * ka).toFixed(1);
+        a.burn_rate    = +(a.burn_rate    * kv).toFixed(1);
+        a.stations.forEach(s => {
+          s.arm = +(s.arm * ka).toFixed(1);
+          if (s.max) s.max = Math.round(s.max * kw);
+          if (s.min) s.min = Math.round(s.min * kw);
+          if (s.default) s.default = Math.round(s.default * kw);
+        });
+        a.envelope.forEach(p => {
+          p.w = Math.round(p.w * kw);
+          p.fwd = +(p.fwd * ka).toFixed(1);
+          p.aft = +(p.aft * ka).toFixed(1);
+        });
+      }
+      a.units = newUnits;
+      document.getElementById('config-body').innerHTML = configForm(a);
+      bindConfigEvents(a);
+      renderStationEditors(a);
+      renderEnvEditor(a);
+    };
     renderStationEditors(a);
     renderEnvEditor(a);
   }
