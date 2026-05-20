@@ -138,6 +138,7 @@ const App = (function(){
     wind: { mode: 'dirspeed', dir: 0, speed: 0, headwind_component: 0 },
     op_type: 'private',     // 'private' or 'air_transport'
     op_time: 'day',         // 'day' or 'night'
+    perf_method: 'pchart',  // 'pchart' or 'afm' — auto-selected per-aircraft if only one exists
     use_landing_weight_for_landing: true,
   };
   let recentRunways = [];
@@ -164,6 +165,7 @@ const App = (function(){
   function migrate(ac){
     if (!ac.scenarios) ac.scenarios = [];
     if (ac.pchart_id === undefined) ac.pchart_id = null;
+    if (ac.afm_id === undefined) ac.afm_id = null;
     if (ac.crosswind_demonstrated_kt === undefined) ac.crosswind_demonstrated_kt = null;
     if (ac.crosswind_club_kt === undefined) ac.crosswind_club_kt = null;
     if (ac.group === undefined) ac.group = null;
@@ -1163,6 +1165,51 @@ const App = (function(){
     const wet = (r.condition === 'wet' || r.condition === 'long_grass');
 
     const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
+    const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
+    const hasP = !!pdata, hasA = !!adata;
+
+    // Determine active method based on availability + user preference
+    let activeMethod;
+    if (hasP && hasA){
+      // Both available — honour user toggle
+      activeMethod = perfInput.perf_method === 'afm' ? 'afm' : 'pchart';
+    } else if (hasP){
+      activeMethod = 'pchart';
+    } else if (hasA){
+      activeMethod = 'afm';
+    } else {
+      activeMethod = 'none';
+    }
+    // Sync state
+    if (activeMethod !== 'none') perfInput.perf_method = activeMethod;
+
+    // Render toggle row
+    const toggleHost = document.getElementById('perf-method-toggle');
+    if (toggleHost){
+      if (hasP && hasA){
+        toggleHost.style.display = '';
+        ['pchart','afm'].forEach(m => {
+          const btn = document.getElementById('method-' + m);
+          const isActive = activeMethod === m;
+          btn.style.background = isActive ? '#d97706' : '';
+          btn.style.color = isActive ? '#fff' : '';
+          btn.disabled = false;
+        });
+      } else if (hasP || hasA){
+        // Show as info-only (disabled, indicating which one)
+        toggleHost.style.display = '';
+        ['pchart','afm'].forEach(m => {
+          const btn = document.getElementById('method-' + m);
+          const isActive = activeMethod === m;
+          btn.style.background = isActive ? '#d97706' : '';
+          btn.style.color = isActive ? '#fff' : '';
+          btn.style.opacity = isActive ? '1' : '0.4';
+          btn.disabled = !isActive;
+        });
+      } else {
+        toggleHost.style.display = 'none';
+      }
+    }
 
     // Derive the canonical operation key from the user's choices + runway surface
     const opKey = deriveOperationKey(perfInput.op_type, perfInput.op_time, r.surface);
@@ -1178,14 +1225,12 @@ const App = (function(){
 
     // Annotate the Surface label
     const sln = document.getElementById('surface-label-note');
-    if (sln) sln.textContent = pdata ? '· feeds Operation' : '· used in calc (AFM mode)';
+    if (sln) sln.textContent = activeMethod === 'pchart' ? '· feeds Operation line' : (activeMethod === 'afm' ? '· used directly (AC91-3 factor)' : '');
 
     // Show derived line
     const opDerived = document.getElementById('perf-op-derived');
     if (opDerived){
-      opDerived.innerHTML = pdata
-        ? `→ P-chart line: <strong>${opLabelMap[opKey]}</strong> (auto-set from surface)`
-        : `→ no P-chart data — Surface selection is used directly`;
+      opDerived.innerHTML = `→ P-chart line: <strong>${opLabelMap[opKey]}</strong> (auto-set from surface)`;
     }
 
     // Air Transport warning
@@ -1198,21 +1243,47 @@ const App = (function(){
       }
     }
 
-    let to_result = null, ld_result = null, method = 'none';
+    let to_result = null, ld_result = null;
     let methodNote = '';
 
-    if (pdata){
-      method = 'pchart';
-      methodNote = `Method: <strong>P-chart</strong> (${pdata.source}). Inputs: pressure altitude, OAT, slope, wind, operation line (incl. surface). The Surface dropdown does NOT directly feed the calc — it sets which Operation line is used.`;
+    // Show/hide Operation card: relevant only in P-chart mode
+    const opCard = document.getElementById('perf-op-card');
+    if (opCard) opCard.classList.toggle('hidden', activeMethod !== 'pchart');
+
+    if (activeMethod === 'pchart'){
+      methodNote = `Method: <strong>P-chart</strong> (${pdata.source}). CASO 4 factors are <strong>baked into the chart</strong> — not re-applied. Inputs: pressure altitude, OAT, slope, wind, operation line (set by surface + day/night).`;
       to_result = P.pchartTakeoffDistance(pdata, pa, oat, opKey, r.slope, headwind, wet);
       ld_result = P.pchartLandingDistance(pdata, r.elev, opKey, r.slope, headwind, wet);
+    } else if (activeMethod === 'afm'){
+      methodNote = `Method: <strong>POH + AC91-3 (CASO 4) factors</strong> (${adata.source}). Inputs: POH base distance × PA correction × temp correction, then × surface (Table 1) × slope (Table 2) × wind (1.5×/0.5×) × wet (+15%).`;
+      const afmTo = {
+        to_base_msl_isa_m: adata.takeoff.base_msl_isa_m,
+        to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000,
+        to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c,
+        to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0,
+        mtow_kg: ac.mtow, current_weight_kg: null,
+      };
+      const afmLd = {
+        ld_base_msl_isa_m: adata.landing.base_msl_isa_m,
+        ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000,
+        ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c,
+        ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0,
+        mtow_kg: ac.mtow, current_landing_weight_kg: null,
+      };
+      to_result = P.afmFactorsTakeoff(afmTo, pa, oat, r.surface, r.slope, headwind, wet);
+      ld_result = P.afmFactorsLanding(afmLd, pa, oat, r.surface, r.slope, headwind, wet);
+      // afm functions don't return d_ppd/op_mult; fake them so the breakdown still renders
+      if (to_result){ to_result.d_ppd = to_result.distance / (to_result.surf_factor * to_result.slope_factor * to_result.wind_factor * to_result.wet_factor); to_result.op_mult = to_result.surf_factor; }
+      if (ld_result){ ld_result.d_ppd = ld_result.distance / (ld_result.surf_factor * ld_result.slope_factor * ld_result.wind_factor * ld_result.wet_factor); ld_result.op_mult = ld_result.surf_factor; }
     } else {
-      method = 'none';
+      methodNote = `Method: <strong>none</strong>. Set a P-chart or POH data source in the aircraft config.`;
     }
 
     const host = document.getElementById('perf-results');
-    if (method === 'none'){
-      host.innerHTML = `<div class="banner warn" style="margin:0">No performance data for this aircraft yet. P-chart data is currently available for the PA-38 only.</div>`;
+    if (activeMethod === 'none'){
+      host.innerHTML =
+        `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
+        `<div class="banner warn" style="margin:0">No performance data computed for this aircraft. Set a P-chart or POH data source in the aircraft configuration.</div>`;
       document.getElementById('perf-breakdown').innerHTML = '';
     } else {
       const stat = (label, distance, available, ok, sub) => {
@@ -1228,9 +1299,9 @@ const App = (function(){
       const toOK = r.tora > 0 && to_result.distance <= r.tora;
       const ldOK = r.lda > 0 && ld_result.distance <= r.lda;
 
-      // Wind out-of-chart warning
+      // Wind out-of-chart warning (P-chart mode only)
       let windWarning = '';
-      if (pdata.wind_factor){
+      if (activeMethod === 'pchart' && pdata.wind_factor){
         if (headwind < -pdata.wind_factor.max_tailwind_kt){
           windWarning = `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Tailwind ${(-headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt — distances computed at chart maximum tailwind, actual distance likely worse.</div>`;
         } else if (headwind > pdata.wind_factor.max_headwind_kt){
@@ -1322,6 +1393,12 @@ const App = (function(){
     }
 
     xwHost.innerHTML = xwHtml;
+  }
+
+  function setPerfMethod(m){
+    if (m !== 'pchart' && m !== 'afm') return;
+    perfInput.perf_method = m;
+    computeAndRenderPerf();
   }
 
   function loadSavedRunway(id){
@@ -1449,6 +1526,7 @@ const App = (function(){
       mtow: 0, mlw: 0, mzfw: null, reserve_minutes: 30,
       scenarios: [],
       pchart_id: null,
+      afm_id: null,
       crosswind_demonstrated_kt: null,
       crosswind_club_kt: null,
       group: null,
@@ -1514,12 +1592,18 @@ const App = (function(){
       <div class="row">
         <div><label>P-chart data</label>
           <select id="cfg-pchart">
-            <option value="">— none (no performance data) —</option>
-            <option value="PA-38" ${a.pchart_id==='PA-38'?'selected':''}>PA-38 (Wellington Aero Club)</option>
+            <option value="">— none —</option>
+            ${Object.keys(window.PCHART_DATA||{}).map(k => `<option value="${k}" ${a.pchart_id===k?'selected':''}>${k}</option>`).join('')}
           </select>
-          <small class="help">More P-charts to be added in future updates.</small>
+        </div>
+        <div><label>POH (AFM) data</label>
+          <select id="cfg-afm">
+            <option value="">— none —</option>
+            ${Object.keys(window.AFM_DATA||{}).map(k => `<option value="${k}" ${a.afm_id===k?'selected':''}>${k}</option>`).join('')}
+          </select>
         </div>
       </div>
+      <small class="help" style="margin-bottom:8px">P-chart includes CASO 4 factors. POH (AFM) uses raw POH numbers + AC91-3 factors applied by the app. When both are set, you can switch on the Performance tab.</small>
       <div class="row">
         <div><label>Demonstrated crosswind (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-demo" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="from POH"></div>
         <div><label>Club crosswind limit (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-club" value="${a.crosswind_club_kt ?? ''}" placeholder="if lower than demo"></div>
@@ -1686,6 +1770,8 @@ const App = (function(){
     // Performance fields
     const pcEl = document.getElementById('cfg-pchart');
     if (pcEl) a.pchart_id = pcEl.value || null;
+    const afmEl = document.getElementById('cfg-afm');
+    if (afmEl) a.afm_id = afmEl.value || null;
     const xwDemo = parseFloat(document.getElementById('cfg-xw-demo')?.value);
     a.crosswind_demonstrated_kt = isNaN(xwDemo) ? null : xwDemo;
     const xwClub = parseFloat(document.getElementById('cfg-xw-club')?.value);
@@ -1836,7 +1922,7 @@ const App = (function(){
     saveScenario, loadScenario, deleteScenario,
     addLeg, removeLeg,
     printSheet,
-    setWindMode, loadSavedRunway, saveCurrentRunway,
+    setWindMode, setPerfMethod, loadSavedRunway, saveCurrentRunway,
     openManageRunways, closeManageRunways, manageRunwaySelect, manageRunwayDelete,
     exportRunways, importRunways,
   };

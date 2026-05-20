@@ -290,7 +290,7 @@
         <div id="wind-components" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>
       </div>
 
-      <div class="card">
+      <div class="card" id="perf-op-card">
         <h2>Operation</h2>
         <div class="row">
           <div><label>Type</label>
@@ -312,6 +312,13 @@
 
       <div class="card">
         <h2>Performance</h2>
+        <div id="perf-method-toggle" style="display:none;margin-bottom:8px">
+          <label>Calculation method</label>
+          <div style="display:flex;gap:6px">
+            <button class="btn secondary" data-method="pchart" id="method-pchart" style="flex:1;padding:8px;font-size:13px" onclick="App.setPerfMethod('pchart')">P-chart</button>
+            <button class="btn secondary" data-method="afm" id="method-afm" style="flex:1;padding:8px;font-size:13px" onclick="App.setPerfMethod('afm')">POH + AC91-3</button>
+          </div>
+        </div>
         <div id="perf-results"></div>
         <details style="margin-top:8px"><summary>Breakdown</summary>
           <div id="perf-breakdown"></div>
@@ -411,6 +418,7 @@
 <script src="chart.umd.min.js"></script>
 <script src="performance.js"></script>
 <script src="pchart-pa38.js"></script>
+<script src="afm-data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
