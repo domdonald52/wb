@@ -43,14 +43,14 @@ window.PCHART_DATA['PA-38'] = {
   landing: {
     // d_PPD(elev) = a + b*elev + c*elev^2  (metres)
     ppd_model: {
-      a: 280.4286,
-      b: 0.0231429,
-      c: 7.14286e-7,
+      // Fit to: SL=480, 2000'=530, 4000'=580 — linear in elevation
+      a: 480,
+      b: 0.025,
+      c: 0,
     },
     valid: { elev_min: 0, elev_max: 4000 },
     reference_points: [
-      { elev: 0, d: 280 }, { elev: 1000, d: 305 }, { elev: 2000, d: 330 },
-      { elev: 3000, d: 355 }, { elev: 4000, d: 385 },
+      { elev: 0, d: 480 }, { elev: 2000, d: 530 }, { elev: 4000, d: 580 },
     ],
   },
 
@@ -59,10 +59,10 @@ window.PCHART_DATA['PA-38'] = {
   operation_multipliers: {
     'private_paved_day':    1.00,
     'air_transport_paved_day': 1.16,
-    'private_grass_day':    1.24,
-    'air_transport_grass_day': 1.40,
-    'all_ops_paved_night':  1.50,
-    'all_ops_grass_night':  1.70,
+    'private_grass_day':    1.30,
+    'air_transport_grass_day': 1.46,
+    'all_ops_paved_night':  1.56,
+    'all_ops_grass_night':  1.78,
   },
 
   // Slope adjustment: percent change in distance per 1% of slope.
