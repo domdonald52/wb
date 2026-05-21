@@ -206,6 +206,19 @@
     <div class="print-only" id="print-banner"></div>
     <div class="print-only" id="print-loading" style="font-size:10pt;margin-bottom:10px"></div>
 
+    <div class="print-only" id="print-perf-section" style="page-break-before:always;display:none">
+      <div class="print-header" style="margin-bottom:12px">
+        <div><h1 id="print-perf-title" style="margin:0">Performance sheet</h1><div id="print-perf-acline" style="font-size:10pt;margin-top:2px"></div></div>
+        <div class="meta">
+          Date: ____________________<br>
+          PIC: ____________________<br>
+          Generated: <span id="print-perf-when"></span>
+        </div>
+      </div>
+      <div id="print-perf-banner" style="padding:8px 10px;border:1px solid #999;border-radius:4px;margin-bottom:10px;font-size:10pt"></div>
+      <div id="print-perf-body" style="font-size:10pt"></div>
+    </div>
+
     <div id="banner-host"></div>
 
     <div class="card" id="stations-card">
@@ -221,52 +234,25 @@
     <div id="perf-cards" class="hidden">
       <div class="card">
         <h2>Runway <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
-        <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-end">
-          <div style="flex:1">
-            <label>Saved runway</label>
-            <select id="saved-rwy-select" onchange="App.loadSavedRunway(this.value)"><option value="">— enter a new runway below —</option></select>
-          </div>
-          <button class="icon-btn" id="rwy-save-btn" onclick="App.saveCurrentRunway()" title="Save current runway to the dropdown list" aria-label="Save runway">💾</button>
-          <button class="icon-btn" onclick="App.openManageRunways()" title="Manage saved runways (edit / delete / export / import)" aria-label="Manage runways">⚙</button>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <select id="saved-rwy-select" onchange="App.loadSavedRunway(this.value)" style="flex:1"><option value="">— select a runway —</option></select>
+          <button class="icon-btn" id="rwy-menu-btn" onclick="App.toggleRwyMenu(event)" title="Runway options" aria-label="Runway options">⚙</button>
         </div>
-        <div class="row">
-          <div style="flex:2"><label>Designator</label><input type="text" id="rwy-ident" placeholder="e.g. NZWN 16"><small class="help">runway identifier</small></div>
-          <div><label>Heading (°M)</label><input type="number" inputmode="decimal" id="rwy-hdg" min="0" max="360" step="1" placeholder="160"><small class="help">degrees magnetic</small></div>
+        <div id="rwy-menu" class="ac-menu hidden" style="margin-top:-6px;margin-bottom:8px">
+          <button onclick="App.editCurrentRunway(); App.closeRwyMenu();">Edit current runway…</button>
+          <button onclick="App.duplicateCurrentRunway(); App.closeRwyMenu();">Duplicate current runway…</button>
+          <button onclick="App.newRunway(); App.closeRwyMenu();">Add new runway…</button>
+          <button onclick="App.openManageRunways(); App.closeRwyMenu();">Manage all runways…</button>
         </div>
+        <div id="rwy-summary" style="font-size:12px;color:var(--muted);line-height:1.6;padding:8px;background:var(--panel-2);border-radius:6px;margin-bottom:8px"></div>
         <div class="row">
-          <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rwy-elev" step="1" placeholder="41"><small class="help">aerodrome elevation</small></div>
-          <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rwy-slope" step="0.1" placeholder="-0.7"><small class="help">+ uphill, − downhill (T/O direction)</small></div>
-        </div>
-        <div class="row">
-          <div><label>TORA (m)</label><input type="number" inputmode="decimal" id="rwy-tora" step="1" placeholder="1936"></div>
-          <div><label>LDA (m)</label><input type="number" inputmode="decimal" id="rwy-lda" step="1" placeholder="1719"></div>
-        </div>
-        <div class="row">
-          <div><label>Surface <span id="surface-label-note" style="color:var(--muted);font-size:10px;font-weight:400"></span></label>
-            <select id="rwy-surface">
-              <option value="paved">Paved</option>
-              <option value="grass">Grass</option>
-              <option value="metal">Metal</option>
-              <option value="rolled_earth">Rolled earth</option>
-              <option value="coral">Coral</option>
-            </select>
-          </div>
-          <div><label>Condition</label>
+          <div><label>Condition (this flight)</label>
             <select id="rwy-condition">
               <option value="dry">Dry</option>
               <option value="wet">Wet (+15% landing)</option>
               <option value="long_grass">Long grass (treat as wet)</option>
             </select>
-          </div>
-        </div>
-        <div class="row">
-          <div><label>Aerodrome Group (NZ)</label>
-            <select id="rwy-group">
-              <option value="">— not set —</option>
-              <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
-              <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
-            </select>
-            <small class="help">from AIP aerodrome chart (AC139-7)</small>
+            <small class="help">per-flight; not stored with runway</small>
           </div>
           <div></div>
         </div>
@@ -412,6 +398,24 @@
   </div>
 </div>
 
+<!-- Runway config modal -->
+<div class="modal-bg hidden" id="rwy-config-modal">
+  <div class="modal">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <h3 id="rwy-config-title" style="margin:0">Runway configuration</h3>
+      <button class="icon-btn" style="margin-left:auto" onclick="App.closeRunwayConfig()" aria-label="Close">✕</button>
+    </div>
+    <div style="font-size:11px;color:var(--warn);margin-bottom:8px">⚠ Verify all values against the current AIP.</div>
+    <div id="rwy-config-body"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn" onclick="App.saveRunwayConfig()" style="flex:1;min-width:90px">Save</button>
+      <button class="btn secondary" onclick="App.saveRunwayConfigAsCopy()" id="btn-rwy-save-copy" style="flex:1;min-width:120px">Save as copy</button>
+      <button class="btn secondary" onclick="App.closeRunwayConfig()" style="flex:0 0 auto">Cancel</button>
+      <button class="btn danger" onclick="App.deleteRunway()" id="btn-delete-rwy" style="flex:0 0 auto">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- Menu modal -->
 <div class="modal-bg hidden" id="menu-modal">
   <div class="modal">
@@ -419,14 +423,29 @@
       <h3 style="margin:0">Menu</h3>
       <button class="icon-btn" style="margin-left:auto" onclick="App.closeMenu()" aria-label="Close">✕</button>
     </div>
-    <button class="btn secondary" onclick="App.exportData()" style="margin-bottom:6px">Export all aircraft (JSON)</button>
+
+    <button class="btn" onclick="App.printSheet(); App.closeMenu();" style="margin-bottom:10px">⎙ Print sheet (W&amp;B + Performance)</button>
+
+    <h4 style="font-size:13px;margin:8px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Aircraft</h4>
+    <button class="btn secondary" onclick="App.newAircraft(); App.closeMenu();" style="margin-bottom:6px">+ Add new aircraft</button>
+    <button class="btn secondary" onclick="App.openManageAircraft(); App.closeMenu();" style="margin-bottom:6px">Manage all aircraft…</button>
+    <button class="btn secondary" onclick="App.exportData()" style="margin-bottom:6px">Export aircraft…</button>
     <button class="btn secondary" onclick="document.getElementById('import-file').click()" style="margin-bottom:6px">Import aircraft (JSON)</button>
     <input type="file" id="import-file" accept="application/json" style="display:none" onchange="App.importData(event)">
-    <button class="btn secondary" onclick="App.restoreDefaults()" style="margin-bottom:6px">Restore default fleet</button>
+    <button class="btn secondary" onclick="App.restoreDefaults()" style="margin-bottom:6px">Restore default aircraft</button>
+
+    <h4 style="font-size:13px;margin:14px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Runways</h4>
+    <button class="btn secondary" onclick="App.newRunway(); App.closeMenu();" style="margin-bottom:6px">+ Add new runway</button>
+    <button class="btn secondary" onclick="App.openManageRunways(); App.closeMenu();" style="margin-bottom:6px">Manage all runways…</button>
+    <button class="btn secondary" onclick="App.exportRunways(); App.closeMenu();" style="margin-bottom:6px">Export runways…</button>
+    <button class="btn secondary" onclick="document.getElementById('import-runways-file').click()" style="margin-bottom:6px">Import runways (JSON)</button>
+    <input type="file" id="import-runways-file" accept="application/json" style="display:none" onchange="App.importRunwaysFile(event)">
+    <button class="btn secondary" onclick="App.restoreDefaultRunways()" style="margin-bottom:6px">Restore default runways</button>
+
     <hr>
     <p style="font-size:12px;color:var(--muted);margin:0">
-      <strong>Always verify against the aircraft POH and an independent check before flight.</strong><br>
-      Default aircraft figures are illustrative — replace empty weight, empty arm and station arms with the actual values from your aircraft's weighing report.<br><br>
+      <strong>Always verify against the aircraft Flight Manual and an independent check before flight.</strong><br>
+      Default values are illustrative — replace with values from your aircraft's weighing report and the current AIP.<br><br>
       To install on iOS: tap Share → Add to Home Screen. On Android: browser menu → Install app.
     </p>
   </div>

@@ -1026,7 +1026,10 @@ const App = (function(){
     const surf = ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'})[r.surface] || r.surface;
     const cond = ({dry:'Dry', wet:'Wet', long_grass:'Long grass'})[r.condition] || r.condition;
 
-    const pb = document.getElementById('print-banner');
+    const pb = document.getElementById('print-perf-banner');
+    document.getElementById('print-perf-title').textContent = 'Performance sheet';
+    document.getElementById('print-perf-acline').textContent = `${ac.reg} — ${ac.type}`;
+    document.getElementById('print-perf-when').textContent = new Date().toLocaleString();
     const violations = [];
     if (to_d != null && r.tora > 0 && to_d > r.tora) violations.push(`T/O ${to_d.toFixed(0)} m exceeds TORA ${r.tora} m`);
     if (ld_d != null && r.lda > 0 && ld_d > r.lda) violations.push(`Landing ${ld_d.toFixed(0)} m exceeds LDA ${r.lda} m`);
@@ -1035,10 +1038,10 @@ const App = (function(){
     if (headwind < 0) violations.push(`Tailwind ${(-headwind).toFixed(1)} kt`);
     if (ac.group != null && r.group != null && ac.group > r.group) violations.push(`Aircraft Group ${ac.group} exceeds runway Group ${r.group}`);
     if (violations.length === 0){
-      pb.className = 'print-only ok';
+      pb.style.background = '#e8f5ec'; pb.style.color = '#060'; pb.style.borderColor = '#060';
       pb.textContent = '✓ Within all performance limits.';
     } else {
-      pb.className = 'print-only bad';
+      pb.style.background = '#fde8e8'; pb.style.color = '#a00'; pb.style.borderColor = '#a00';
       pb.innerHTML = '<strong>⚠ Issues:</strong> ' + violations.join(' · ');
     }
 
@@ -1048,7 +1051,7 @@ const App = (function(){
     const ldMargin = (ld_d != null && r.lda > 0) ? ((1 - ld_d/r.lda)*100).toFixed(0)+'%' : '—';
     const lineLabels = {private_paved_day:'Private — Paved — Day', air_transport_paved_day:'Air Transport — Paved — Day', private_grass_day:'Private — Grass — Day', air_transport_grass_day:'Air Transport — Grass — Day', all_ops_paved_night:'All Ops — Paved — Night', all_ops_grass_night:'All Ops — Grass — Night'};
 
-    document.getElementById('print-loading').innerHTML = `
+    document.getElementById('print-perf-body').innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
         <div style="border:1px solid #999;padding:8px;border-radius:4px">
           <div style="font-weight:600;font-size:10pt;margin-bottom:4px">Runway <span style="font-weight:400;color:#a00;font-size:8pt">⚠ Verify against current AIP</span></div>
@@ -1104,19 +1107,12 @@ const App = (function(){
 
   function printSheet(){
     const ac = fleet.find(a => a.id === selectedId);
-    if (!ac) return;
-    const isPerf = (mode === 'performance');
-    document.getElementById('print-title').textContent = isPerf ? 'Performance sheet' : 'Weight & Balance sheet';
+    if (!ac){ alert('Select an aircraft first.'); return; }
+    document.getElementById('print-title').textContent = 'Weight & Balance sheet';
     document.getElementById('print-acline').textContent = `${ac.reg} — ${ac.type}`;
     document.getElementById('print-when').textContent = new Date().toLocaleString();
 
-    if (isPerf){
-      buildPerfPrint(ac);
-      setTimeout(() => window.print(), 100);
-      return;
-    }
-
-    // Build loading summary line(s) so the print sheet shows what produced the numbers
+    // --- Always build the W&B section ---
     const sv = stationValues[ac.id] || {};
     const fc = fuelInput[ac.id] || {};
     const stationStr = ac.stations.map((s, i) => {
@@ -1146,8 +1142,7 @@ const App = (function(){
     } else {
       const fuel = fc.fuel !== undefined ? fc.fuel : ac.usable_fuel;
       const dur = fc.duration !== undefined ? fc.duration : 1.0;
-      loadingHtml += `<br><strong>Fuel:</strong> ${fmt(fuel,1)} ${u(ac).vol} · <strong>Flight time:</strong> ${fmt(dur,2)} h · <strong>Mode:</strong> ${mode === 'reverse' ? 'Max-fuel calculation' : 'Plan flight'}`;
-      // Endurance & dipstick info
+      loadingHtml += `<br><strong>Fuel:</strong> ${fmt(fuel,1)} ${u(ac).vol} · <strong>Flight time:</strong> ${fmt(dur,2)} h`;
       if (ac.burn_rate > 0){
         const endurance = fuel / ac.burn_rate;
         const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
@@ -1159,20 +1154,35 @@ const App = (function(){
     }
     document.getElementById('print-loading').innerHTML = loadingHtml;
 
-    // Populate the print banner with pass/fail summary
     const pb = document.getElementById('print-banner');
-    let violations = [];
-    if (mode === 'multileg'){
-      violations = calcMultileg(ac).violations;
-    } else {
-      violations = calc(ac).violations;
-    }
+    const violations = (mode === 'multileg' ? calcMultileg(ac) : calc(ac)).violations;
     if (violations.length === 0){
       pb.className = 'print-only ok';
-      pb.textContent = '✓ Within all limits.';
+      pb.textContent = '✓ Within all W&B limits.';
     } else {
       pb.className = 'print-only bad';
       pb.innerHTML = '<strong>⚠ Out of limits:</strong> ' + violations.join(' · ');
+    }
+
+    // --- Build performance section if data permits ---
+    const perfSection = document.getElementById('print-perf-section');
+    const r = perfInput.runway;
+    const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
+    const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
+    const hasPerfData = pdata || adata;
+    const hasRunway = r.ident || (r.tora > 0) || (r.lda > 0);
+    if (hasPerfData && hasRunway){
+      perfSection.style.display = '';
+      buildPerfPrint(ac);
+    } else {
+      perfSection.style.display = 'none';
+      // Tell pilot why performance didn't print
+      if (mode === 'performance' && !hasRunway){
+        // user is on Perf tab with no runway — make this visible in the banner
+        pb.innerHTML += '<br><small>Performance sheet skipped: no runway entered.</small>';
+      } else if (!hasPerfData && (hasRunway || mode === 'performance')){
+        pb.innerHTML += `<br><small>Performance sheet skipped: ${ac.reg} has no P-chart or POH data configured.</small>`;
+      }
     }
 
     setTimeout(() => window.print(), 100);
@@ -1198,38 +1208,45 @@ const App = (function(){
   function renderPerformance(){
     const ac = fleet.find(a => a.id === selectedId);
     if (!ac) return;
-
-    // Bind runway form fields
-    const r = perfInput.runway;
-    document.getElementById('rwy-ident').value = r.ident || '';
-    document.getElementById('rwy-hdg').value = r.heading ?? '';
-    document.getElementById('rwy-elev').value = r.elev ?? '';
-    document.getElementById('rwy-slope').value = r.slope ?? '';
-    document.getElementById('rwy-tora').value = r.tora ?? '';
-    document.getElementById('rwy-lda').value = r.lda ?? '';
-    document.getElementById('rwy-surface').value = r.surface || 'paved';
-    document.getElementById('rwy-condition').value = r.condition || 'dry';
-    document.getElementById('rwy-group').value = r.group ?? '';
-
+    document.getElementById('rwy-condition').value = perfInput.runway.condition || 'dry';
     document.getElementById('cond-oat').value = perfInput.conditions.oat ?? '';
     document.getElementById('cond-qnh').value = perfInput.conditions.qnh ?? 1013;
-
     document.getElementById('perf-op-type').value = perfInput.op_type;
     document.getElementById('perf-op-time').value = perfInput.op_time;
-
-    // Saved runways picker
     renderSavedRunwaysPicker();
-
+    renderRunwaySummary();
     renderWindInputs();
     bindPerfHandlers();
     computeAndRenderPerf();
+  }
+
+  function renderRunwaySummary(){
+    const host = document.getElementById('rwy-summary');
+    if (!host) return;
+    const r = perfInput.runway;
+    if (!selectedRunwayId || !r.ident){
+      host.innerHTML = '<em>No runway selected. Use the cog menu to add or pick one.</em>';
+      return;
+    }
+    const surfaceLabel = ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'})[r.surface] || r.surface || 'Paved';
+    const parts = [
+      `<strong>${r.ident}</strong>`,
+      `Hdg ${r.heading}°M`,
+      `Elev ${r.elev}′`,
+      `Slope ${r.slope >= 0 ? '+' : ''}${r.slope}%`,
+      `TORA ${r.tora} m`,
+      `LDA ${r.lda} m`,
+      surfaceLabel,
+    ];
+    if (r.group != null) parts.push(`Group ${r.group}`);
+    host.innerHTML = parts.join(' · ');
   }
 
   function renderSavedRunwaysPicker(){
     const sel = document.getElementById('saved-rwy-select');
     if (!sel) return;
     const surfaceLabel = s => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'}[s] || s || 'Paved');
-    sel.innerHTML = '<option value="">— enter a new runway below —</option>' +
+    sel.innerHTML = '<option value="">— select a runway —</option>' +
       runways.map(rw => {
         const parts = (rw.ident || '').trim().split(/\s+/);
         const icao = parts[0] || '?';
@@ -1240,7 +1257,7 @@ const App = (function(){
   }
 
   function bindPerfHandlers(){
-    const fields = ['rwy-ident','rwy-hdg','rwy-elev','rwy-slope','rwy-tora','rwy-lda','rwy-surface','rwy-condition','rwy-group','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
+    const fields = ['rwy-condition','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
     fields.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -1250,17 +1267,7 @@ const App = (function(){
   }
 
   function onPerfFieldChange(){
-    const r = perfInput.runway;
-    r.ident = document.getElementById('rwy-ident').value;
-    r.heading = parseFloat(document.getElementById('rwy-hdg').value) || 0;
-    r.elev = parseFloat(document.getElementById('rwy-elev').value) || 0;
-    r.slope = parseFloat(document.getElementById('rwy-slope').value) || 0;
-    r.tora = parseFloat(document.getElementById('rwy-tora').value) || 0;
-    r.lda = parseFloat(document.getElementById('rwy-lda').value) || 0;
-    r.surface = document.getElementById('rwy-surface').value;
-    r.condition = document.getElementById('rwy-condition').value;
-    const grpVal = document.getElementById('rwy-group').value;
-    r.group = grpVal === '' ? null : parseInt(grpVal, 10);
+    perfInput.runway.condition = document.getElementById('rwy-condition').value;
     const oat_val = document.getElementById('cond-oat').value;
     perfInput.conditions.oat = oat_val === '' ? null : parseFloat(oat_val);
     perfInput.conditions.qnh = parseFloat(document.getElementById('cond-qnh').value) || 1013;
@@ -1329,10 +1336,10 @@ const App = (function(){
     if (wcEl){
       if (perfInput.wind.mode === 'dirspeed' && perfInput.wind.speed > 0){
         wcEl.innerHTML = `→ Headwind: <strong>${headwind.toFixed(1)} kt</strong> · Crosswind: <strong>${crosswind.toFixed(1)} kt</strong>`;
-      } else if (perfInput.wind.mode === 'component'){
+      } else if (perfInput.wind.mode === 'component' && perfInput.wind.headwind_component !== 0){
         wcEl.innerHTML = '';
       } else {
-        wcEl.innerHTML = '';
+        wcEl.innerHTML = `<span style="color:var(--warn)">⚠ No wind entered — calculation assumes calm. Confirm against ATIS/METAR.</span>`;
       }
     }
 
@@ -1519,19 +1526,6 @@ const App = (function(){
           ${wet ? `<tr><td>× Wet</td><td style="text-align:right">${fmt2(ld_result.wet_factor)}</td><td style="text-align:right">${ld_result.distance.toFixed(0)} m</td></tr>` : ''}
         </table>
       `;
-
-      // If a saved runway is currently selected, auto-save edits back to it
-      if (selectedRunwayId){
-        const rw = runways.find(x => x.id === selectedRunwayId);
-        if (rw){
-          clearTimeout(window._rwSaveT);
-          window._rwSaveT = setTimeout(() => {
-            Object.assign(rw, { ident: r.ident, heading: r.heading, elev: r.elev, slope: r.slope, tora: r.tora, lda: r.lda, surface: r.surface, condition: r.condition, group: r.group });
-            saveRunways();
-            renderSavedRunwaysPicker();
-          }, 2000);
-        }
-      }
     }
 
     // Crosswind
@@ -1611,42 +1605,157 @@ const App = (function(){
     renderPerformance();
   }
 
-  function saveCurrentRunway(){
-    const r = perfInput.runway;
-    if (!r.ident && !r.tora && !r.lda){ alert('Enter at least a designator and TORA before saving.'); return; }
-    const wasNew = !selectedRunwayId;
+  // --- Runway editor (modal) ---
+  function runwayConfigForm(rw){
+    return `
+      <div class="row">
+        <div style="flex:2"><label>Designator</label><input type="text" id="rcfg-ident" value="${rw.ident||''}" placeholder="e.g. NZWN 16"><small class="help">ICAO + direction, e.g. NZWN 16</small></div>
+        <div><label>Heading (°M)</label><input type="number" inputmode="decimal" id="rcfg-hdg" min="0" max="360" step="1" value="${rw.heading ?? ''}" placeholder="160"><small class="help">degrees magnetic</small></div>
+      </div>
+      <div class="row">
+        <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rcfg-elev" step="1" value="${rw.elev ?? ''}" placeholder="41"><small class="help">aerodrome elevation</small></div>
+        <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rcfg-slope" step="0.1" value="${rw.slope ?? ''}" placeholder="-0.7"><small class="help">+ uphill, − downhill (T/O direction)</small></div>
+      </div>
+      <div class="row">
+        <div><label>TORA (m)</label><input type="number" inputmode="decimal" id="rcfg-tora" step="1" value="${rw.tora ?? ''}" placeholder="1936"></div>
+        <div><label>LDA (m)</label><input type="number" inputmode="decimal" id="rcfg-lda" step="1" value="${rw.lda ?? ''}" placeholder="1719"></div>
+      </div>
+      <div class="row">
+        <div><label>Surface</label>
+          <select id="rcfg-surface">
+            <option value="paved" ${(rw.surface||'paved')==='paved'?'selected':''}>Paved</option>
+            <option value="grass" ${rw.surface==='grass'?'selected':''}>Grass</option>
+            <option value="metal" ${rw.surface==='metal'?'selected':''}>Metal</option>
+            <option value="rolled_earth" ${rw.surface==='rolled_earth'?'selected':''}>Rolled earth</option>
+            <option value="coral" ${rw.surface==='coral'?'selected':''}>Coral</option>
+          </select>
+        </div>
+        <div><label>Aerodrome Group (NZ)</label>
+          <select id="rcfg-group">
+            <option value="">— not set —</option>
+            ${[1,2,3,4,5,6,7,8].map(g => `<option value="${g}" ${rw.group===g?'selected':''}>${g}</option>`).join('')}
+          </select>
+          <small class="help">from AIP (AC139-7)</small>
+        </div>
+      </div>
+    `;
+  }
+
+  function openRunwayConfig(forNew, runwayIdOverride){
+    editingRunwayId = forNew ? null : (runwayIdOverride || selectedRunwayId);
+    const rw = editingRunwayId ? runways.find(x => x.id === editingRunwayId) : null;
+    const blank = { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
+    const data = rw || blank;
+    document.getElementById('rwy-config-title').textContent = editingRunwayId ? 'Edit runway' : 'Add new runway';
+    document.getElementById('rwy-config-body').innerHTML = runwayConfigForm(data);
+    document.getElementById('btn-rwy-save-copy').style.display = editingRunwayId ? '' : 'none';
+    document.getElementById('btn-delete-rwy').style.display = editingRunwayId ? '' : 'none';
+    document.getElementById('rwy-config-modal').classList.remove('hidden');
+  }
+  function closeRunwayConfig(){ document.getElementById('rwy-config-modal').classList.add('hidden'); }
+
+  function readRunwayForm(){
+    const grpV = document.getElementById('rcfg-group').value;
+    return {
+      ident: document.getElementById('rcfg-ident').value.trim(),
+      heading: parseFloat(document.getElementById('rcfg-hdg').value) || 0,
+      elev: parseFloat(document.getElementById('rcfg-elev').value) || 0,
+      slope: parseFloat(document.getElementById('rcfg-slope').value) || 0,
+      tora: parseFloat(document.getElementById('rcfg-tora').value) || 0,
+      lda: parseFloat(document.getElementById('rcfg-lda').value) || 0,
+      surface: document.getElementById('rcfg-surface').value,
+      group: grpV === '' ? null : parseInt(grpV, 10),
+    };
+  }
+
+  function saveRunwayConfig(){
+    const data = readRunwayForm();
+    if (!data.ident){ alert('Designator is required.'); return; }
+    if (editingRunwayId){
+      const rw = runways.find(x => x.id === editingRunwayId);
+      if (rw){ Object.assign(rw, data); }
+    } else {
+      const newRw = { id: 'rwy-' + Math.random().toString(36).slice(2, 9), ...data };
+      runways.push(newRw);
+      selectedRunwayId = newRw.id;
+      saveSelectedRunway();
+    }
+    saveRunways();
+    closeRunwayConfig();
+    // If the user just edited the currently-selected runway, refresh the form values too
     if (selectedRunwayId){
-      const rw = runways.find(x => x.id === selectedRunwayId);
-      if (rw){
-        Object.assign(rw, { ident: r.ident, heading: r.heading, elev: r.elev, slope: r.slope, tora: r.tora, lda: r.lda, surface: r.surface, group: r.group });
-        saveRunways();
-        renderSavedRunwaysPicker();
-        flashSaveButton(wasNew);
-        return;
+      const sel = runways.find(x => x.id === selectedRunwayId);
+      if (sel){
+        perfInput.runway = { ...perfInput.runway, ident: sel.ident, heading: sel.heading, elev: sel.elev, slope: sel.slope, tora: sel.tora, lda: sel.lda, surface: sel.surface, group: sel.group };
       }
     }
-    const newRw = {
-      id: 'rwy-' + Math.random().toString(36).slice(2, 9),
-      ident: r.ident, heading: r.heading, elev: r.elev, slope: r.slope,
-      tora: r.tora, lda: r.lda, surface: r.surface, group: r.group,
-    };
+    renderPerformance();
+  }
+  function saveRunwayConfigAsCopy(){
+    const data = readRunwayForm();
+    if (!data.ident){ alert('Designator is required.'); return; }
+    const newRw = { id: 'rwy-' + Math.random().toString(36).slice(2, 9), ...data };
     runways.push(newRw);
     selectedRunwayId = newRw.id;
+    saveSelectedRunway();
+    saveRunways();
+    closeRunwayConfig();
+    const sel = runways.find(x => x.id === selectedRunwayId);
+    if (sel){
+      perfInput.runway = { ...perfInput.runway, ident: sel.ident, heading: sel.heading, elev: sel.elev, slope: sel.slope, tora: sel.tora, lda: sel.lda, surface: sel.surface, group: sel.group };
+    }
+    renderPerformance();
+  }
+  function deleteRunway(){
+    if (!editingRunwayId) return;
+    if (!confirm('Delete this runway? This cannot be undone.')) return;
+    runways = runways.filter(x => x.id !== editingRunwayId);
+    if (selectedRunwayId === editingRunwayId){
+      selectedRunwayId = null;
+      saveSelectedRunway();
+      perfInput.runway = { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: perfInput.runway.condition, group: null };
+    }
+    saveRunways();
+    closeRunwayConfig();
+    renderPerformance();
+  }
+
+  function newRunway(){ openRunwayConfig(true); }
+  function editCurrentRunway(){
+    if (!selectedRunwayId){ alert('No runway selected. Pick one from the dropdown first, or use "Add new runway".'); return; }
+    openRunwayConfig(false);
+  }
+  function duplicateCurrentRunway(){
+    if (!selectedRunwayId){ alert('No runway selected to duplicate.'); return; }
+    const orig = runways.find(x => x.id === selectedRunwayId);
+    if (!orig) return;
+    const copy = { ...orig, id: 'rwy-' + Math.random().toString(36).slice(2, 9), ident: (orig.ident || '') + ' (copy)' };
+    runways.push(copy);
+    selectedRunwayId = copy.id;
     saveRunways();
     saveSelectedRunway();
-    renderSavedRunwaysPicker();
-    flashSaveButton(wasNew);
+    openRunwayConfig(false);
   }
-  function flashSaveButton(wasNew){
-    const btn = document.getElementById('rwy-save-btn');
-    if (!btn) return;
-    const orig = btn.innerHTML;
-    btn.innerHTML = wasNew ? '✓' : '✓';
-    btn.style.background = '#16a34a';
-    btn.style.color = '#fff';
-    btn.title = wasNew ? 'Saved as new runway' : 'Updated saved runway';
-    setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.style.color = ''; btn.title = 'Save current runway'; }, 1200);
+
+  // Runway cog menu (mirrors aircraft menu)
+  function toggleRwyMenu(event){
+    if (event) event.stopPropagation();
+    const m = document.getElementById('rwy-menu');
+    if (!m) return;
+    m.classList.toggle('hidden');
+    if (!m.classList.contains('hidden')){
+      setTimeout(() => {
+        const handler = (ev) => {
+          if (!m.contains(ev.target) && ev.target.id !== 'rwy-menu-btn'){
+            m.classList.add('hidden');
+            document.removeEventListener('click', handler);
+          }
+        };
+        document.addEventListener('click', handler);
+      }, 0);
+    }
   }
+  function closeRwyMenu(){ const m = document.getElementById('rwy-menu'); if (m) m.classList.add('hidden'); }
 
   function openManageRunways(){
     renderManageRunwaysList();
@@ -1659,7 +1768,7 @@ const App = (function(){
     const host = document.getElementById('manage-runways-list');
     if (!host) return;
     if (runways.length === 0){
-      host.innerHTML = '<p style="color:var(--muted);font-size:13px">No runways saved yet. Enter runway details on the Performance tab and tap 💾 to save.</p>';
+      host.innerHTML = '<p style="color:var(--muted);font-size:13px">No runways saved yet. Use "Add new runway" to create one.</p>';
       return;
     }
     host.innerHTML = runways.map(rw => `
@@ -1668,7 +1777,9 @@ const App = (function(){
           <div style="font-weight:600">${rw.ident || '(no ident)'}</div>
           <div style="font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums">${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'} · LDA ${rw.lda||'?'}${rw.group!=null?' · Gp '+rw.group:''}</div>
         </div>
-        <button class="icon-btn" onclick="App.manageRunwaySelect('${rw.id}')" title="Use this runway (loads into form for editing)" aria-label="Use">✓</button>
+        <button class="icon-btn" onclick="App.manageRunwaySelect('${rw.id}')" title="Select" aria-label="Select">✓</button>
+        <button class="icon-btn" onclick="App.manageRunwayEdit('${rw.id}')" title="Edit" aria-label="Edit">✎</button>
+        <button class="icon-btn" onclick="App.manageRunwayDuplicate('${rw.id}')" title="Duplicate" aria-label="Duplicate">⎘</button>
         <button class="icon-btn" onclick="App.manageRunwayDelete('${rw.id}')" title="Delete" aria-label="Delete">🗑</button>
       </div>
     `).join('');
@@ -1677,12 +1788,30 @@ const App = (function(){
     loadSavedRunway(id);
     closeManageRunways();
   }
+  function manageRunwayEdit(id){
+    closeManageRunways();
+    openRunwayConfig(false, id);
+  }
+  function manageRunwayDuplicate(id){
+    const orig = runways.find(x => x.id === id);
+    if (!orig) return;
+    const copy = { ...orig, id: 'rwy-' + Math.random().toString(36).slice(2, 9), ident: (orig.ident || '') + ' (copy)' };
+    runways.push(copy);
+    saveRunways();
+    renderManageRunwaysList();
+    renderSavedRunwaysPicker();
+  }
   function manageRunwayDelete(id){
     const rw = runways.find(x => x.id === id);
     if (!rw) return;
     if (!confirm(`Delete runway "${rw.ident || '(no ident)'}"?`)) return;
     runways = runways.filter(x => x.id !== id);
-    if (selectedRunwayId === id){ selectedRunwayId = null; saveSelectedRunway(); }
+    if (selectedRunwayId === id){
+      selectedRunwayId = null;
+      saveSelectedRunway();
+      perfInput.runway = { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: perfInput.runway.condition, group: null };
+      if (mode === 'performance') renderPerformance();
+    }
     saveRunways();
     renderManageRunwaysList();
     renderSavedRunwaysPicker();
@@ -1710,38 +1839,52 @@ const App = (function(){
       },
     });
   }
+  function importRunwaysFile(e){
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const incoming = Array.isArray(data) ? data : data.runways;
+        if (!Array.isArray(incoming)) throw new Error('Invalid format');
+        closeMenu();
+        openPicker({
+          title: 'Import runways',
+          subtitle: `${incoming.length} runway(s) in this file. Choose which to add.`,
+          confirmLabel: 'Import',
+          items: incoming.map(rw => ({
+            value: rw, checked: true,
+            label: rw.ident || '(no ident)',
+            detail: `${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'}m`,
+          })),
+          onConfirm: (chosen) => {
+            chosen.forEach(rw => runways.push(migrateRunway({ ...rw, id: 'rwy-' + Math.random().toString(36).slice(2, 9) })));
+            saveRunways();
+            if (mode === 'performance') renderSavedRunwaysPicker();
+            alert(`Imported ${chosen.length} runway(s).`);
+          },
+        });
+      } catch(err){ alert('Import failed: ' + err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+  function restoreDefaultRunways(){
+    if (!confirm('Replace all your saved runways with the defaults? Your current runway data will be lost.')) return;
+    // No default runway dataset yet; clear the list.
+    runways = [];
+    selectedRunwayId = null;
+    saveRunways(); saveSelectedRunway(); closeMenu();
+    perfInput.runway = { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: perfInput.runway.condition, group: null };
+    if (mode === 'performance') renderPerformance();
+    alert('Saved runways cleared. (No default runway dataset is bundled yet.)');
+  }
+
   function importRunways(){
+    // Used from inside the Manage Runways modal — file picker via element
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'application/json,.json';
-    input.onchange = e => {
-      const file = e.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = ev => {
-        try {
-          const data = JSON.parse(ev.target.result);
-          const incoming = Array.isArray(data) ? data : data.runways;
-          if (!Array.isArray(incoming)) throw new Error('Invalid format');
-          closeManageRunways();
-          openPicker({
-            title: 'Import runways',
-            subtitle: `${incoming.length} runway(s) in this file. Choose which to add.`,
-            confirmLabel: 'Import',
-            items: incoming.map(rw => ({
-              value: rw, checked: true,
-              label: rw.ident || '(no ident)',
-              detail: `${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'}m`,
-            })),
-            onConfirm: (chosen) => {
-              chosen.forEach(rw => runways.push(migrateRunway({ ...rw, id: 'rwy-' + Math.random().toString(36).slice(2, 9) })));
-              saveRunways();
-              renderSavedRunwaysPicker();
-              alert(`Imported ${chosen.length} runway(s).`);
-            },
-          });
-        } catch(err){ alert('Import failed: ' + err.message); }
-      };
-      reader.readAsText(file);
-    };
+    input.onchange = e => importRunwaysFile(e);
     input.click();
   }
 
@@ -2254,9 +2397,12 @@ const App = (function(){
     saveScenario, loadScenario, deleteScenario,
     addLeg, removeLeg,
     printSheet,
-    setWindMode, setPerfMethod, loadSavedRunway, saveCurrentRunway,
-    openManageRunways, closeManageRunways, manageRunwaySelect, manageRunwayDelete,
-    exportRunways, importRunways,
+    setWindMode, setPerfMethod, loadSavedRunway,
+    newRunway, editCurrentRunway, duplicateCurrentRunway,
+    openRunwayConfig, closeRunwayConfig, saveRunwayConfig, saveRunwayConfigAsCopy, deleteRunway,
+    toggleRwyMenu, closeRwyMenu,
+    openManageRunways, closeManageRunways, manageRunwaySelect, manageRunwayEdit, manageRunwayDuplicate, manageRunwayDelete,
+    exportRunways, importRunways, importRunwaysFile, restoreDefaultRunways,
     pickerSelectAll, cancelPicker, confirmPicker,
   };
 })();
