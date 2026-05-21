@@ -537,24 +537,59 @@ const App = (function(){
         <div class="row">
           <div>
             <label>Usable fuel on board (${u(ac).vol})</label>
-            <input type="number" inputmode="decimal" id="in-fuel" value="${fc.fuel}" min="0" max="${ac.usable_fuel}" step="0.5">
-            <small class="help">tank ${fmt(ac.usable_fuel,1)} ${u(ac).vol} usable · burn ${fmt(ac.burn_rate,1)} ${u(ac).flow}${(ac.fuel_unusable||0) > 0 ? ` · dipstick − ${fmt(ac.fuel_unusable,1)} = usable` : ''}</small>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" inputmode="decimal" id="in-fuel" value="${fc.fuel}" min="0" max="${ac.usable_fuel}" step="0.5" style="flex:1">
+              <button class="btn secondary" id="in-fuel-max" type="button" style="width:auto;padding:8px 12px;font-size:12px" title="Fill with maximum permissible usable fuel">Max</button>
+            </div>
+            <small class="help" id="in-fuel-help">tank ${fmt(ac.usable_fuel,1)} ${u(ac).vol} usable · burn ${fmt(ac.burn_rate,1)} ${u(ac).flow}${(ac.fuel_unusable||0) > 0 ? ` · dipstick − ${fmt(ac.fuel_unusable,1)} = usable` : ''}</small>
           </div>
           <div>
             <label>Flight duration (hours)</label>
             <input type="number" inputmode="decimal" id="in-dur" value="${fc.duration}" min="0" max="10" step="0.25">
-            <small class="help">Burn: ${fmt(fc.duration * ac.burn_rate, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(fc.duration * ac.burn_rate * u(ac).fuel_density, 1)} ${u(ac).w}</strong></small>
+            <small class="help" id="in-dur-help">Burn: ${fmt(fc.duration * ac.burn_rate, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(fc.duration * ac.burn_rate * u(ac).fuel_density, 1)} ${u(ac).w}</strong></small>
           </div>
         </div>
+        <div id="endurance-check" style="margin-top:6px;font-size:11px"></div>
       `;
-      host.querySelector('#in-fuel').addEventListener('input', e => { fc.fuel = parseFloat(e.target.value) || 0; update(); });
+      const refreshEnduranceCheck = () => {
+        const f = parseFloat(document.getElementById('in-fuel').value) || 0;
+        const d = parseFloat(document.getElementById('in-dur').value) || 0;
+        const el = document.getElementById('endurance-check');
+        if (!el || ac.burn_rate <= 0){ if (el) el.innerHTML = ''; return; }
+        const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
+        const endurance = f / ac.burn_rate;
+        const usableEnd = Math.max(0, (f - reserveFuel) / ac.burn_rate);
+        const msg = `Endurance: ${fmt(endurance,2)} h to dry · ${fmt(usableEnd,2)} h after ${ac.reserve_minutes}-min reserve`;
+        if (d > usableEnd && d > 0){
+          el.innerHTML = `<div class="banner bad" style="margin:0;font-size:11px">⚠ Planned duration ${fmt(d,2)} h exceeds endurance after reserve (${fmt(usableEnd,2)} h). ${msg}</div>`;
+        } else if (d > 0){
+          el.innerHTML = `<div style="color:var(--muted)">${msg}</div>`;
+        } else {
+          el.innerHTML = `<div style="color:var(--muted)">${msg}</div>`;
+        }
+      };
+      host.querySelector('#in-fuel').addEventListener('input', e => { fc.fuel = parseFloat(e.target.value) || 0; refreshEnduranceCheck(); update(); });
+      host.querySelector('#in-fuel-max').addEventListener('click', () => {
+        const r = calcReverse(ac);
+        fc.fuel = r.bestFuel;
+        document.getElementById('in-fuel').value = fmt(r.bestFuel, 1);
+        const limitedBy = r.bestFuel >= r.maxFuelByMtow - 0.05 ? 'MTOW' : (r.bestFuel >= r.maxFuelByTank - 0.05 ? 'tank capacity' : 'CG envelope');
+        const unusable = ac.fuel_unusable || 0;
+        const dipstick = r.bestFuel + unusable;
+        const help = document.getElementById('in-fuel-help');
+        if (help) help.innerHTML = `Max fill: <strong>${fmt(r.bestFuel,1)} ${u(ac).vol}</strong> usable (limited by ${limitedBy})${unusable > 0 ? ` · dipstick <strong>${fmt(dipstick,1)} ${u(ac).vol}</strong>` : ''}`;
+        refreshEnduranceCheck();
+        update();
+      });
       host.querySelector('#in-dur').addEventListener('input', e => {
         fc.duration = parseFloat(e.target.value) || 0;
         const burnVol = fc.duration * ac.burn_rate;
         const burnWt = burnVol * u(ac).fuel_density;
-        e.target.nextElementSibling.innerHTML = `Burn: ${fmt(burnVol, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(burnWt, 1)} ${u(ac).w}</strong>`;
+        document.getElementById('in-dur-help').innerHTML = `Burn: ${fmt(burnVol, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(burnWt, 1)} ${u(ac).w}</strong>`;
+        refreshEnduranceCheck();
         update();
       });
+      refreshEnduranceCheck();
     } else if (mode === 'reverse'){
       titleEl.textContent = 'Maximum fuel';
       const r = calcReverse(ac);
@@ -951,11 +986,135 @@ const App = (function(){
   }
 
   // ---- printing ----
+  function buildPerfPrint(ac){
+    const r = perfInput.runway;
+    const c = perfInput.conditions;
+    const P = window.Performance;
+    const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
+    const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
+    const activeMethod = perfInput.perf_method && ((perfInput.perf_method === 'pchart' && pdata) || (perfInput.perf_method === 'afm' && adata)) ? perfInput.perf_method : (pdata ? 'pchart' : (adata ? 'afm' : 'none'));
+
+    let headwind = 0, crosswind = 0;
+    if (perfInput.wind.mode === 'dirspeed'){
+      const wc = P.windComponents(r.heading, perfInput.wind.dir, perfInput.wind.speed);
+      headwind = wc.headwind; crosswind = wc.crosswind;
+    } else {
+      headwind = perfInput.wind.headwind_component;
+    }
+
+    const pa = P.pressureAltitude(r.elev, c.qnh);
+    const isa = P.isaTemp(pa);
+    const oat = c.oat === null ? isa : c.oat;
+    const da = P.densityAltitude(pa, oat);
+    const wet = (r.condition === 'wet' || r.condition === 'long_grass');
+    const opKey = deriveOperationKey(perfInput.op_type, perfInput.op_time, r.surface);
+
+    let to_d = null, ld_d = null, methodLabel = '';
+    if (activeMethod === 'pchart'){
+      methodLabel = `P-chart (${pdata.source})`;
+      to_d = P.pchartTakeoffDistance(pdata, pa, oat, opKey, r.slope, headwind, wet).distance;
+      ld_d = P.pchartLandingDistance(pdata, r.elev, opKey, r.slope, headwind, wet).distance;
+    } else if (activeMethod === 'afm'){
+      methodLabel = `POH + AC91-3 factors (${adata.source})`;
+      const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+      const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+      const tr = P.afmFactorsTakeoff(afmTo, pa, oat, r.surface, r.slope, headwind, wet);
+      const lr = P.afmFactorsLanding(afmLd, pa, oat, r.surface, r.slope, headwind, wet);
+      to_d = tr && tr.distance; ld_d = lr && lr.distance;
+    }
+
+    const surf = ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'})[r.surface] || r.surface;
+    const cond = ({dry:'Dry', wet:'Wet', long_grass:'Long grass'})[r.condition] || r.condition;
+
+    const pb = document.getElementById('print-banner');
+    const violations = [];
+    if (to_d != null && r.tora > 0 && to_d > r.tora) violations.push(`T/O ${to_d.toFixed(0)} m exceeds TORA ${r.tora} m`);
+    if (ld_d != null && r.lda > 0 && ld_d > r.lda) violations.push(`Landing ${ld_d.toFixed(0)} m exceeds LDA ${r.lda} m`);
+    const xwLimit = (ac.crosswind_demonstrated_kt && ac.crosswind_club_kt) ? Math.min(ac.crosswind_demonstrated_kt, ac.crosswind_club_kt) : (ac.crosswind_demonstrated_kt || ac.crosswind_club_kt || null);
+    if (xwLimit && crosswind > xwLimit) violations.push(`Crosswind ${crosswind.toFixed(1)} kt exceeds limit ${xwLimit} kt`);
+    if (headwind < 0) violations.push(`Tailwind ${(-headwind).toFixed(1)} kt`);
+    if (ac.group != null && r.group != null && ac.group > r.group) violations.push(`Aircraft Group ${ac.group} exceeds runway Group ${r.group}`);
+    if (violations.length === 0){
+      pb.className = 'print-only ok';
+      pb.textContent = '✓ Within all performance limits.';
+    } else {
+      pb.className = 'print-only bad';
+      pb.innerHTML = '<strong>⚠ Issues:</strong> ' + violations.join(' · ');
+    }
+
+    const fmt0 = v => v == null ? '?' : v.toFixed(0);
+    const fmt1 = v => v == null ? '?' : v.toFixed(1);
+    const toMargin = (to_d != null && r.tora > 0) ? ((1 - to_d/r.tora)*100).toFixed(0)+'%' : '—';
+    const ldMargin = (ld_d != null && r.lda > 0) ? ((1 - ld_d/r.lda)*100).toFixed(0)+'%' : '—';
+    const lineLabels = {private_paved_day:'Private — Paved — Day', air_transport_paved_day:'Air Transport — Paved — Day', private_grass_day:'Private — Grass — Day', air_transport_grass_day:'Air Transport — Grass — Day', all_ops_paved_night:'All Ops — Paved — Night', all_ops_grass_night:'All Ops — Grass — Night'};
+
+    document.getElementById('print-loading').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+        <div style="border:1px solid #999;padding:8px;border-radius:4px">
+          <div style="font-weight:600;font-size:10pt;margin-bottom:4px">Runway <span style="font-weight:400;color:#a00;font-size:8pt">⚠ Verify against current AIP</span></div>
+          <div style="font-size:9pt;line-height:1.5">
+            <strong>${r.ident || '(no ident)'}</strong> · Hdg ${r.heading}°M<br>
+            Elev ${r.elev}' · Slope ${r.slope}%<br>
+            TORA ${r.tora} m · LDA ${r.lda} m<br>
+            ${surf} · ${cond}${r.group != null ? ' · Group ' + r.group : ''}
+          </div>
+        </div>
+        <div style="border:1px solid #999;padding:8px;border-radius:4px">
+          <div style="font-weight:600;font-size:10pt;margin-bottom:4px">Conditions</div>
+          <div style="font-size:9pt;line-height:1.5">
+            OAT ${fmt0(oat)}°C · QNH ${c.qnh} hPa<br>
+            PA ${fmt0(pa)}' · ISA ${fmt0(isa)}°C · DA ${fmt0(da)}'<br>
+            ${perfInput.wind.mode === 'dirspeed' && perfInput.wind.speed > 0
+              ? `Wind ${perfInput.wind.dir}°M / ${perfInput.wind.speed} kt<br>HW ${fmt1(headwind)} kt · XW ${fmt1(crosswind)} kt${xwLimit ? ' (limit ' + xwLimit + ')' : ''}`
+              : `HW component: ${fmt1(headwind)} kt`}
+          </div>
+        </div>
+      </div>
+      <div style="border:1px solid #999;padding:8px;border-radius:4px;margin-bottom:8px;font-size:9pt">
+        <strong>Method:</strong> ${methodLabel || 'none'}${activeMethod === 'pchart' ? ' — CASO 4 baked into chart' : (activeMethod === 'afm' ? ' — CASO 4 (AC91-3) factors applied' : '')}
+        ${activeMethod === 'pchart' ? '<br><strong>Chart line:</strong> ' + lineLabels[opKey] : '<br><strong>Surface:</strong> ' + surf}
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9pt">
+        <thead><tr style="background:#eee">
+          <td style="border:1px solid #999;padding:6px;font-weight:600">Performance</td>
+          <td style="border:1px solid #999;padding:6px;font-weight:600;text-align:right">Required</td>
+          <td style="border:1px solid #999;padding:6px;font-weight:600;text-align:right">Available</td>
+          <td style="border:1px solid #999;padding:6px;font-weight:600;text-align:right">Margin</td>
+          <td style="border:1px solid #999;padding:6px;font-weight:600;text-align:center">GO/NO-GO</td>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td style="border:1px solid #999;padding:6px">T/O distance to 50' (max performance)</td>
+            <td style="border:1px solid #999;padding:6px;text-align:right">${fmt0(to_d)} m</td>
+            <td style="border:1px solid #999;padding:6px;text-align:right">${r.tora || '—'} m</td>
+            <td style="border:1px solid #999;padding:6px;text-align:right">${toMargin}</td>
+            <td style="border:1px solid #999;padding:6px;text-align:center">${to_d != null && r.tora > 0 ? (to_d <= r.tora ? '<span style="color:#060">✓ GO</span>' : '<span style="color:#a00">✗ NO-GO</span>') : '—'}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #999;padding:6px">Landing distance from 50' (full flap)</td>
+            <td style="border:1px solid #999;padding:6px;text-align:right">${fmt0(ld_d)} m</td>
+            <td style="border:1px solid #999;padding:6px;text-align:right">${r.lda || '—'} m</td>
+            <td style="border:1px solid #999;padding:6px;text-align:right">${ldMargin}</td>
+            <td style="border:1px solid #999;padding:6px;text-align:center">${ld_d != null && r.lda > 0 ? (ld_d <= r.lda ? '<span style="color:#060">✓ GO</span>' : '<span style="color:#a00">✗ NO-GO</span>') : '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }
+
   function printSheet(){
     const ac = fleet.find(a => a.id === selectedId);
     if (!ac) return;
+    const isPerf = (mode === 'performance');
+    document.getElementById('print-title').textContent = isPerf ? 'Performance sheet' : 'Weight & Balance sheet';
     document.getElementById('print-acline').textContent = `${ac.reg} — ${ac.type}`;
     document.getElementById('print-when').textContent = new Date().toLocaleString();
+
+    if (isPerf){
+      buildPerfPrint(ac);
+      setTimeout(() => window.print(), 100);
+      return;
+    }
 
     // Build loading summary line(s) so the print sheet shows what produced the numbers
     const sv = stationValues[ac.id] || {};
@@ -974,10 +1133,29 @@ const App = (function(){
         return `${l.name || 'Leg '+(i+1)}: ${fmt(l.duration,2)} h${uplift}`;
       }).join(' · ');
       loadingHtml += `<br><strong>Start fuel:</strong> ${fmt(startFuel,1)} ${u(ac).vol} · <strong>Legs:</strong> ${legParts}`;
+      const totalDur = legs.reduce((s, l) => s + (l.duration||0), 0);
+      const totalUplift = legs.reduce((s, l) => s + (l.uplift_before||0), 0);
+      if (ac.burn_rate > 0){
+        const totalFuelUsed = totalDur * ac.burn_rate;
+        const finalFuel = Math.max(0, startFuel + totalUplift - totalFuelUsed);
+        const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
+        const unusable = ac.fuel_unusable || 0;
+        const dipstick = startFuel + unusable;
+        loadingHtml += `<br><strong>Total flight time:</strong> ${fmt(totalDur,2)} h · <strong>Fuel used:</strong> ${fmt(totalFuelUsed,1)} ${u(ac).vol} · <strong>Final fuel:</strong> ${fmt(finalFuel,1)} ${u(ac).vol} (reserve ${fmt(reserveFuel,1)})${unusable > 0 ? ` · <strong>Start dipstick:</strong> ${fmt(dipstick,1)} ${u(ac).vol}` : ''}`;
+      }
     } else {
       const fuel = fc.fuel !== undefined ? fc.fuel : ac.usable_fuel;
       const dur = fc.duration !== undefined ? fc.duration : 1.0;
       loadingHtml += `<br><strong>Fuel:</strong> ${fmt(fuel,1)} ${u(ac).vol} · <strong>Flight time:</strong> ${fmt(dur,2)} h · <strong>Mode:</strong> ${mode === 'reverse' ? 'Max-fuel calculation' : 'Plan flight'}`;
+      // Endurance & dipstick info
+      if (ac.burn_rate > 0){
+        const endurance = fuel / ac.burn_rate;
+        const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
+        const usableEnd = Math.max(0, (fuel - reserveFuel) / ac.burn_rate);
+        const unusable = ac.fuel_unusable || 0;
+        const dipstick = fuel + unusable;
+        loadingHtml += `<br><strong>Endurance:</strong> ${fmt(endurance,2)} h to dry · ${fmt(usableEnd,2)} h after ${ac.reserve_minutes}-min reserve${unusable > 0 ? ` · <strong>Dipstick:</strong> ${fmt(dipstick,1)} ${u(ac).vol} (incl. ${fmt(unusable,1)} unusable)` : ''}`;
+      }
     }
     document.getElementById('print-loading').innerHTML = loadingHtml;
 
@@ -1616,7 +1794,7 @@ const App = (function(){
         </div>
       </div>
       <hr>
-      <h3 style="font-size:14px;margin:4px 0 8px">Airframe (from weighing report)</h3>
+      <h3 style="font-size:14px;margin:4px 0 8px">Airframe</h3>
       <div class="row">
         <div><label>Empty weight (${wU})</label><input type="number" inputmode="decimal" id="cfg-ew" value="${a.empty_weight}" step="0.1"></div>
         <div><label>Empty arm (${aU})</label><input type="number" inputmode="decimal" id="cfg-ea" value="${a.empty_arm}" step="0.01"></div>
@@ -1673,10 +1851,11 @@ const App = (function(){
       </div>
       <hr>
       <h3 style="font-size:14px;margin:4px 0 8px">Stations <button class="icon-btn" onclick="App.addStation()" aria-label="Add station">+</button></h3>
+      <small class="help" style="margin-bottom:6px">Values from Flight Manual.</small>
       <div id="cfg-stations"></div>
       <hr>
       <h3 style="font-size:14px;margin:4px 0 8px">CG envelope <button class="icon-btn" onclick="App.addEnvPoint()" aria-label="Add point">+</button></h3>
-      <small class="help" style="margin-bottom:6px">Vertices in increasing weight. fwd = forward CG limit, aft = rear CG limit at that weight.</small>
+      <small class="help" style="margin-bottom:6px">Envelope vertices from Flight Manual, in increasing weight. fwd = forward CG limit, aft = rear CG limit at that weight.</small>
       <div id="cfg-envelope"></div>
     `;
   }
@@ -1760,13 +1939,15 @@ const App = (function(){
     const aU = isMetric ? 'mm' : 'in';
     host.innerHTML = a.stations.map((s, idx) => `
       <div class="station">
-        <input type="text" value="${s.name}" data-sidx="${idx}" data-f="name" placeholder="Station name" style="margin-bottom:6px">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <input type="text" value="${s.name}" data-sidx="${idx}" data-f="name" placeholder="Station name" style="flex:1">
+          <button class="icon-btn" onclick="App.removeStation(${idx})" aria-label="Remove station" title="Remove">✕</button>
+        </div>
         <div class="row">
           <div><label>Arm (${aU})</label><input type="number" inputmode="decimal" step="0.01" value="${s.arm}" data-sidx="${idx}" data-f="arm"></div>
           <div><label>Max load (${wU})</label><input type="number" inputmode="decimal" step="1" value="${s.max}" data-sidx="${idx}" data-f="max"></div>
           <div class="narrow"><label>Default</label><input type="number" inputmode="decimal" step="1" value="${s.default||0}" data-sidx="${idx}" data-f="default"></div>
         </div>
-        <button class="btn danger" onclick="App.removeStation(${idx})" style="padding:6px 8px;font-size:12px;margin-top:6px">Remove</button>
       </div>
     `).join('');
     host.querySelectorAll('input').forEach(inp => {

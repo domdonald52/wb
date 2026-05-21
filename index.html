@@ -126,7 +126,7 @@
     @page { size: A4; margin: 14mm; }
     body { background: #fff !important; color: #000 !important; font-size: 11pt; }
     header, .tab-bar, #ac-selector, .ac-menu, #banner-host, .scenario-bar, .icon-btn, button, details summary, .modal-bg,
-    #stations-card, #fuel-card, .print-sig, details {
+    #stations-card, #fuel-card, #perf-cards, .print-sig, details {
       display: none !important;
     }
     .app, main { max-width: none !important; padding: 0 !important; }
@@ -181,7 +181,6 @@
   <div id="calculator" class="hidden">
     <div class="tab-bar">
       <button data-mode="forward" class="active" onclick="App.setMode('forward')">Plan flight</button>
-      <button data-mode="reverse" onclick="App.setMode('reverse')">Max fuel</button>
       <button data-mode="multileg" onclick="App.setMode('multileg')">Multi-leg</button>
       <button data-mode="performance" onclick="App.setMode('performance')">Performance</button>
     </div>
@@ -192,11 +191,11 @@
       </select>
       <button class="icon-btn" onclick="App.saveScenario()" title="Save current as scenario" aria-label="Save scenario">★</button>
       <button class="icon-btn" onclick="App.deleteScenario()" title="Delete selected scenario" aria-label="Delete scenario">🗑</button>
-      <button class="icon-btn" onclick="App.printSheet()" title="Print W&amp;B sheet" aria-label="Print">⎙</button>
+      <button class="icon-btn" onclick="App.printSheet()" title="Print sheet (W&amp;B or Performance, depending on active tab)" aria-label="Print">⎙</button>
     </div>
 
     <div class="print-only print-header">
-      <div><h1>Weight &amp; Balance sheet</h1><div id="print-acline" style="font-size:10pt;margin-top:2px"></div></div>
+      <div><h1 id="print-title">Weight &amp; Balance sheet</h1><div id="print-acline" style="font-size:10pt;margin-top:2px"></div></div>
       <div class="meta">
         Date: ____________________<br>
         PIC: ____________________<br>
