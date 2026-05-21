@@ -277,7 +277,7 @@ const App = (function(){
     if (ldw > 0 && !inEnvelope(ac.envelope, ldw, cg_ld)) violations.push(`Landing CG ${fmtArm(cg_ld, ac)} ${u(ac).arm} is outside envelope`);
     ac.stations.forEach((s, idx) => {
       const w = sv[idx] !== undefined ? sv[idx] : s.default || 0;
-      if (w > s.max) violations.push(`${s.name} ${fmt(w)} exceeds limit ${fmt(s.max)} ${u(ac).w}`);
+      if (s.max && w > s.max) violations.push(`${s.name} ${fmt(w)} exceeds limit ${fmt(s.max)} ${u(ac).w}`);
     });
     if (fuel > ac.usable_fuel + 0.01) violations.push(`Fuel ${fmt(fuel,1)} exceeds usable ${fmt(ac.usable_fuel,1)} ${u(ac).vol}`);
 
@@ -510,9 +510,9 @@ const App = (function(){
       div.innerHTML = `
         <div class="station-head">
           <span class="station-name">${s.name}</span>
-          <span class="station-meta">arm ${fmtArm(s.arm, ac)} · max ${fmt(s.max)} ${u(ac).w}</span>
+          <span class="station-meta">arm ${fmtArm(s.arm, ac)}${s.max ? ' · max ' + fmt(s.max) + ' ' + u(ac).w : ''}</span>
         </div>
-        <input type="number" inputmode="decimal" value="${sv[idx]}" min="0" max="${s.max * 1.5}" step="${ac.units === 'metric' ? 1 : 1}" data-idx="${idx}">
+        <input type="number" inputmode="decimal" value="${sv[idx]}" min="0" max="${s.max ? s.max * 1.5 : 999}" step="${ac.units === 'metric' ? 1 : 1}" data-idx="${idx}">
       `;
       div.querySelector('input').addEventListener('input', e => {
         sv[idx] = parseFloat(e.target.value) || 0;
@@ -1050,8 +1050,14 @@ const App = (function(){
   function renderSavedRunwaysPicker(){
     const sel = document.getElementById('saved-rwy-select');
     if (!sel) return;
+    const surfaceLabel = s => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'}[s] || s || 'Paved');
     sel.innerHTML = '<option value="">— enter a new runway below —</option>' +
-      runways.map(rw => `<option value="${rw.id}" ${rw.id===selectedRunwayId?'selected':''}>${rw.ident || '(no ident)'} · ${rw.surface||'paved'} · TORA ${rw.tora||'?'}m</option>`).join('');
+      runways.map(rw => {
+        const parts = (rw.ident || '').trim().split(/\s+/);
+        const icao = parts[0] || '?';
+        const dir = parts.slice(1).join(' ') || '?';
+        return `<option value="${rw.id}" ${rw.id===selectedRunwayId?'selected':''}>${icao} - ${dir} - ${surfaceLabel(rw.surface)}</option>`;
+      }).join('');
     sel.value = selectedRunwayId || '';
   }
 
@@ -1230,7 +1236,10 @@ const App = (function(){
     // Show derived line
     const opDerived = document.getElementById('perf-op-derived');
     if (opDerived){
-      opDerived.innerHTML = `→ P-chart line: <strong>${opLabelMap[opKey]}</strong> (auto-set from surface)`;
+      const chartSurfaceNote = (activeMethod === 'pchart' && r.surface !== 'paved' && r.surface !== 'grass')
+        ? `<br><span style="color:var(--warn)">⚠ Chart has only Paved and Grass lines — your "${r.surface.replace('_',' ')}" surface is being treated as Grass. Use POH+AC91-3 mode for accurate Metal/Rolled earth/Coral factors.</span>`
+        : '';
+      opDerived.innerHTML = `→ P-chart line: <strong>${opLabelMap[opKey]}</strong> (auto-set from surface)${chartSurfaceNote}`;
     }
 
     // Air Transport warning
@@ -1388,8 +1397,12 @@ const App = (function(){
     }
 
     // Group sanity check
-    if (ac.group != null && r.group != null && ac.group > r.group){
-      xwHtml += `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ Aircraft Group ${ac.group} exceeds aerodrome Group ${r.group}. Sanity check only — verify with operator / AIP.</div>`;
+    if (ac.group != null && r.group != null){
+      if (ac.group > r.group){
+        xwHtml += `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ Aircraft Group ${ac.group} exceeds aerodrome Group ${r.group}. Sanity check only — verify with operator / AIP.</div>`;
+      } else {
+        xwHtml += `<div class="banner ok" style="margin-top:8px;font-size:12px">✓ Aircraft Group ${ac.group} is compatible with aerodrome Group ${r.group}.</div>`;
+      }
     }
 
     xwHost.innerHTML = xwHtml;
@@ -1423,17 +1436,17 @@ const App = (function(){
   function saveCurrentRunway(){
     const r = perfInput.runway;
     if (!r.ident && !r.tora && !r.lda){ alert('Enter at least a designator and TORA before saving.'); return; }
+    const wasNew = !selectedRunwayId;
     if (selectedRunwayId){
-      // Update existing
       const rw = runways.find(x => x.id === selectedRunwayId);
       if (rw){
         Object.assign(rw, { ident: r.ident, heading: r.heading, elev: r.elev, slope: r.slope, tora: r.tora, lda: r.lda, surface: r.surface, group: r.group });
         saveRunways();
         renderSavedRunwaysPicker();
+        flashSaveButton(wasNew);
         return;
       }
     }
-    // Insert new
     const newRw = {
       id: 'rwy-' + Math.random().toString(36).slice(2, 9),
       ident: r.ident, heading: r.heading, elev: r.elev, slope: r.slope,
@@ -1444,6 +1457,17 @@ const App = (function(){
     saveRunways();
     saveSelectedRunway();
     renderSavedRunwaysPicker();
+    flashSaveButton(wasNew);
+  }
+  function flashSaveButton(wasNew){
+    const btn = document.getElementById('rwy-save-btn');
+    if (!btn) return;
+    const orig = btn.innerHTML;
+    btn.innerHTML = wasNew ? '✓' : '✓';
+    btn.style.background = '#16a34a';
+    btn.style.color = '#fff';
+    btn.title = wasNew ? 'Saved as new runway' : 'Updated saved runway';
+    setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.style.color = ''; btn.title = 'Save current runway'; }, 1200);
   }
 
   function openManageRunways(){
@@ -1466,7 +1490,7 @@ const App = (function(){
           <div style="font-weight:600">${rw.ident || '(no ident)'}</div>
           <div style="font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums">${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'} · LDA ${rw.lda||'?'}${rw.group!=null?' · Gp '+rw.group:''}</div>
         </div>
-        <button class="icon-btn" onclick="App.manageRunwaySelect('${rw.id}')" title="Use" aria-label="Use">✓</button>
+        <button class="icon-btn" onclick="App.manageRunwaySelect('${rw.id}')" title="Use this runway (loads into form for editing)" aria-label="Use">✓</button>
         <button class="icon-btn" onclick="App.manageRunwayDelete('${rw.id}')" title="Delete" aria-label="Delete">🗑</button>
       </div>
     `).join('');
@@ -1486,11 +1510,27 @@ const App = (function(){
     renderSavedRunwaysPicker();
   }
   function exportRunways(){
-    const blob = new Blob([JSON.stringify({ runways, exported: new Date().toISOString() }, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'wb-runways.json'; a.click();
-    URL.revokeObjectURL(url);
+    if (runways.length === 0){ alert('No runways to export.'); return; }
+    closeManageRunways();
+    openPicker({
+      title: 'Export runways',
+      subtitle: 'Choose which runways to include in the export file.',
+      confirmLabel: 'Export',
+      items: runways.map(rw => ({
+        value: rw.id, checked: true,
+        label: rw.ident || '(no ident)',
+        detail: `${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'}m`,
+      })),
+      onConfirm: (ids) => {
+        if (ids.length === 0) return;
+        const subset = runways.filter(rw => ids.includes(rw.id));
+        const blob = new Blob([JSON.stringify({ runways: subset, exported: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'wb-runways-' + new Date().toISOString().slice(0,10) + '.json'; a.click();
+        URL.revokeObjectURL(url);
+      },
+    });
   }
   function importRunways(){
     const input = document.createElement('input');
@@ -1503,11 +1543,23 @@ const App = (function(){
           const data = JSON.parse(ev.target.result);
           const incoming = Array.isArray(data) ? data : data.runways;
           if (!Array.isArray(incoming)) throw new Error('Invalid format');
-          incoming.forEach(rw => runways.push(migrateRunway({ ...rw, id: 'rwy-' + Math.random().toString(36).slice(2, 9) })));
-          saveRunways();
-          renderManageRunwaysList();
-          renderSavedRunwaysPicker();
-          alert(`Imported ${incoming.length} runway(s).`);
+          closeManageRunways();
+          openPicker({
+            title: 'Import runways',
+            subtitle: `${incoming.length} runway(s) in this file. Choose which to add.`,
+            confirmLabel: 'Import',
+            items: incoming.map(rw => ({
+              value: rw, checked: true,
+              label: rw.ident || '(no ident)',
+              detail: `${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'}m`,
+            })),
+            onConfirm: (chosen) => {
+              chosen.forEach(rw => runways.push(migrateRunway({ ...rw, id: 'rwy-' + Math.random().toString(36).slice(2, 9) })));
+              saveRunways();
+              renderSavedRunwaysPicker();
+              alert(`Imported ${chosen.length} runway(s).`);
+            },
+          });
         } catch(err){ alert('Import failed: ' + err.message); }
       };
       reader.readAsText(file);
@@ -1593,16 +1645,17 @@ const App = (function(){
         <div><label>P-chart data</label>
           <select id="cfg-pchart">
             <option value="">— none —</option>
-            ${Object.keys(window.PCHART_DATA||{}).map(k => `<option value="${k}" ${a.pchart_id===k?'selected':''}>${k}</option>`).join('')}
+            ${Object.keys(window.PCHART_DATA||{}).map(k => { const d = window.PCHART_DATA[k]; return `<option value="${k}" ${a.pchart_id===k?'selected':''}>${k} — ${d.name||''}</option>`; }).join('')}
           </select>
         </div>
         <div><label>POH (AFM) data</label>
           <select id="cfg-afm">
             <option value="">— none —</option>
-            ${Object.keys(window.AFM_DATA||{}).map(k => `<option value="${k}" ${a.afm_id===k?'selected':''}>${k}</option>`).join('')}
+            ${Object.keys(window.AFM_DATA||{}).map(k => { const d = window.AFM_DATA[k]; return `<option value="${k}" ${a.afm_id===k?'selected':''}>${k} — ${d.name||''}</option>`; }).join('')}
           </select>
         </div>
       </div>
+      <div id="cfg-perf-info" style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:8px"></div>
       <small class="help" style="margin-bottom:8px">P-chart includes CASO 4 factors. POH (AFM) uses raw POH numbers + AC91-3 factors applied by the app. When both are set, you can switch on the Performance tab.</small>
       <div class="row">
         <div><label>Demonstrated crosswind (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-demo" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="from POH"></div>
@@ -1678,6 +1731,25 @@ const App = (function(){
     document.getElementById('cfg-uf-total')?.addEventListener('input', updateUsableHint);
     document.getElementById('cfg-uf-unusable')?.addEventListener('input', updateUsableHint);
     updateUsableHint();
+    const updatePerfInfo = () => {
+      const pid = document.getElementById('cfg-pchart')?.value;
+      const aid = document.getElementById('cfg-afm')?.value;
+      const lines = [];
+      if (pid && window.PCHART_DATA?.[pid]){
+        const d = window.PCHART_DATA[pid];
+        lines.push(`✓ P-chart: <strong>${d.name||pid}</strong>${d.source ? ' — '+d.source : ''}`);
+      }
+      if (aid && window.AFM_DATA?.[aid]){
+        const d = window.AFM_DATA[aid];
+        lines.push(`✓ POH (AFM): <strong>${d.name||aid}</strong>${d.source ? ' — '+d.source : ''}`);
+      }
+      if (lines.length === 0) lines.push('No performance data selected.');
+      const host = document.getElementById('cfg-perf-info');
+      if (host) host.innerHTML = lines.join('<br>');
+    };
+    document.getElementById('cfg-pchart')?.addEventListener('change', updatePerfInfo);
+    document.getElementById('cfg-afm')?.addEventListener('change', updatePerfInfo);
+    updatePerfInfo();
     renderStationEditors(a);
     renderEnvEditor(a);
   }
@@ -1834,14 +1906,73 @@ const App = (function(){
   }
 
   // ---- import/export ----
+  // --- Multi-select picker ---
+  let _pickerCtx = null;
+  function openPicker({title, subtitle, items, confirmLabel, onConfirm}){
+    _pickerCtx = { items, onConfirm };
+    document.getElementById('picker-title').textContent = title || 'Select';
+    document.getElementById('picker-subtitle').textContent = subtitle || '';
+    document.getElementById('picker-confirm-btn').textContent = confirmLabel || 'OK';
+    renderPickerList();
+    document.getElementById('picker-modal').classList.remove('hidden');
+  }
+  function renderPickerList(){
+    if (!_pickerCtx) return;
+    const host = document.getElementById('picker-list');
+    host.innerHTML = _pickerCtx.items.map((it, i) => `
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:4px;cursor:pointer">
+        <input type="checkbox" data-i="${i}" ${it.checked ? 'checked' : ''}>
+        <div style="flex:1">
+          <div style="font-weight:600">${it.label}</div>
+          ${it.detail ? `<div style="font-size:11px;color:var(--muted)">${it.detail}</div>` : ''}
+        </div>
+      </label>
+    `).join('');
+    host.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', e => { _pickerCtx.items[+e.target.dataset.i].checked = e.target.checked; });
+    });
+  }
+  function pickerSelectAll(v){
+    if (!_pickerCtx) return;
+    _pickerCtx.items.forEach(it => it.checked = v);
+    renderPickerList();
+  }
+  function cancelPicker(){
+    document.getElementById('picker-modal').classList.add('hidden');
+    _pickerCtx = null;
+  }
+  function confirmPicker(){
+    if (!_pickerCtx) return;
+    const chosen = _pickerCtx.items.filter(it => it.checked).map(it => it.value);
+    const cb = _pickerCtx.onConfirm;
+    document.getElementById('picker-modal').classList.add('hidden');
+    _pickerCtx = null;
+    if (cb) cb(chosen);
+  }
+
   function exportData(){
-    const blob = new Blob([JSON.stringify(fleet, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'wb-fleet-' + new Date().toISOString().slice(0,10) + '.json';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (fleet.length === 0){ alert('No aircraft to export.'); return; }
+    openPicker({
+      title: 'Export aircraft',
+      subtitle: 'Choose which aircraft to include in the export file.',
+      confirmLabel: 'Export',
+      items: fleet.map(a => ({
+        value: a.id, checked: true,
+        label: `${a.reg || '(no reg)'} — ${a.type || ''}`,
+        detail: `Empty ${a.empty_weight} ${u(a).w} · MTOW ${a.mtow}${a.pchart_id ? ' · P-chart' : ''}${a.afm_id ? ' · POH' : ''}`,
+      })),
+      onConfirm: (ids) => {
+        if (ids.length === 0) return;
+        const subset = fleet.filter(a => ids.includes(a.id));
+        const blob = new Blob([JSON.stringify(subset, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'wb-fleet-' + new Date().toISOString().slice(0,10) + '.json';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      },
+    });
+    closeMenu();
   }
   function importData(e){
     const file = e.target.files[0];
@@ -1851,14 +1982,33 @@ const App = (function(){
       try {
         const data = JSON.parse(ev.target.result);
         if (!Array.isArray(data)) throw new Error('not an array');
-        if (confirm(`Import ${data.length} aircraft? This will REPLACE your current fleet.`)){
-          fleet = data;
-          selectedId = fleet[0] && fleet[0].id || null;
-          save(); saveSelected(); closeMenu(); renderAll();
-        }
+        openPicker({
+          title: 'Import aircraft',
+          subtitle: `${data.length} aircraft in this file. Choose which to add. Existing aircraft with the same registration will be replaced.`,
+          confirmLabel: 'Import',
+          items: data.map(a => {
+            const exists = fleet.find(x => x.reg === a.reg);
+            return {
+              value: a, checked: true,
+              label: `${a.reg || '(no reg)'} — ${a.type || ''}${exists ? ' ⚠ replaces existing' : ''}`,
+              detail: `Empty ${a.empty_weight || '?'} · MTOW ${a.mtow || '?'}${a.pchart_id ? ' · P-chart' : ''}${a.afm_id ? ' · POH' : ''}`,
+            };
+          }),
+          onConfirm: (chosen) => {
+            chosen.forEach(incoming => {
+              const idx = fleet.findIndex(x => x.reg === incoming.reg);
+              const ac = migrate({ ...incoming, id: idx >= 0 ? fleet[idx].id : ('ac-' + Math.random().toString(36).slice(2, 9)) });
+              if (idx >= 0) fleet[idx] = ac; else fleet.push(ac);
+            });
+            if (!fleet.find(a => a.id === selectedId)) selectedId = fleet[0] && fleet[0].id || null;
+            save(); saveSelected(); closeMenu(); renderAll();
+            alert(`Imported ${chosen.length} aircraft.`);
+          },
+        });
       } catch(err){ alert('Import failed: ' + err.message); }
     };
     reader.readAsText(file);
+    // Reset input so the same file can be picked again later
     e.target.value = '';
   }
   function restoreDefaults(){
@@ -1880,6 +2030,7 @@ const App = (function(){
       renderFuelControls();
       renderResults();
       renderScenarioSelect();
+      if (mode === 'performance') renderPerformance();
     }
   }
   function setMode(m){
@@ -1925,6 +2076,7 @@ const App = (function(){
     setWindMode, setPerfMethod, loadSavedRunway, saveCurrentRunway,
     openManageRunways, closeManageRunways, manageRunwaySelect, manageRunwayDelete,
     exportRunways, importRunways,
+    pickerSelectAll, cancelPicker, confirmPicker,
   };
 })();
 

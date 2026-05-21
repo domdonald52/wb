@@ -227,8 +227,8 @@
             <label>Saved runway</label>
             <select id="saved-rwy-select" onchange="App.loadSavedRunway(this.value)"><option value="">— enter a new runway below —</option></select>
           </div>
-          <button class="icon-btn" id="rwy-save-btn" onclick="App.saveCurrentRunway()" title="Save current runway" aria-label="Save current runway">💾</button>
-          <button class="icon-btn" onclick="App.openManageRunways()" title="Manage runways" aria-label="Manage runways">⚙</button>
+          <button class="icon-btn" id="rwy-save-btn" onclick="App.saveCurrentRunway()" title="Save current runway to the dropdown list" aria-label="Save runway">💾</button>
+          <button class="icon-btn" onclick="App.openManageRunways()" title="Manage saved runways (edit / delete / export / import)" aria-label="Manage runways">⚙</button>
         </div>
         <div class="row">
           <div style="flex:2"><label>Designator</label><input type="text" id="rwy-ident" placeholder="e.g. NZWN 16"><small class="help">runway identifier</small></div>
@@ -362,7 +362,25 @@
   </div>
 </div>
 
-<!-- Manage runways -->
+<!-- Multi-select picker (used for export/import) -->
+<div class="modal-bg hidden" id="picker-modal">
+  <div class="modal">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <h3 style="margin:0" id="picker-title">Select aircraft</h3>
+      <button class="icon-btn" style="margin-left:auto" onclick="App.cancelPicker()" aria-label="Close">✕</button>
+    </div>
+    <div id="picker-subtitle" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn secondary" onclick="App.pickerSelectAll(true)" style="flex:1;padding:6px;font-size:12px">Select all</button>
+      <button class="btn secondary" onclick="App.pickerSelectAll(false)" style="flex:1;padding:6px;font-size:12px">Select none</button>
+    </div>
+    <div id="picker-list" style="max-height:50vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn secondary" onclick="App.cancelPicker()" style="flex:1">Cancel</button>
+      <button class="btn" onclick="App.confirmPicker()" style="flex:1" id="picker-confirm-btn">OK</button>
+    </div>
+  </div>
+</div>
 <div class="modal-bg hidden" id="manage-runways-modal">
   <div class="modal">
     <div style="display:flex;align-items:center;margin-bottom:10px">
