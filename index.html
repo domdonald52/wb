@@ -125,11 +125,14 @@
   @media print {
     @page { size: A4; margin: 14mm; }
     body { background: #fff !important; color: #000 !important; font-size: 11pt; }
-    header, .tab-bar, #ac-selector, .ac-menu, #banner-host, .scenario-bar, .icon-btn, button, details summary, .modal-bg,
-    #stations-card, #fuel-card, #perf-cards, .print-sig, details {
+    html { background: #fff !important; }
+    .app, main { max-width: none !important; padding: 0 !important; background: #fff !important; }
+    header, .tab-bar, #ac-selector, .ac-menu, #banner-host, .scenario-bar, .icon-btn, button, .modal-bg,
+    #stations-card, #fuel-card, #perf-cards, .print-sig {
       display: none !important;
     }
-    .app, main { max-width: none !important; padding: 0 !important; }
+    details, details > div, details > * { display: block !important; }
+    details summary { display: none !important; }
     .card { border: 1px solid #999 !important; background: #fff !important; color: #000 !important; box-shadow: none !important; page-break-inside: avoid; margin-bottom: 10px !important; padding: 10px 12px !important; border-radius: 4px !important; }
     .card h2 { color: #000 !important; font-size: 10pt !important; margin-bottom: 8px !important; }
     .stat { background: #f4f4f4 !important; color: #000 !important; padding: 8px 10px !important; }
@@ -147,6 +150,13 @@
     #print-banner { display: block !important; padding: 8px 10px; border: 1px solid #999; border-radius: 4px; margin-bottom: 10px; font-size: 10pt; background: #f4f4f4 !important; color: #000 !important; }
     #print-banner.bad { background: #fde8e8 !important; color: #a00 !important; border-color: #a00 !important; }
     #print-banner.ok { background: #e8f5ec !important; color: #060 !important; border-color: #060 !important; }
+    #print-perf-section { background: #fff !important; color: #000 !important; }
+    #print-perf-section h1, #print-perf-section h2, #print-perf-section h3, #print-perf-section h4, #print-perf-section div, #print-perf-section span, #print-perf-section td, #print-perf-section tr, #print-perf-section table, #print-perf-section strong, #print-perf-section em { color: #000 !important; }
+    #print-perf-section table { border-collapse: collapse; }
+    #print-perf-section td { background: #fff !important; }
+    #print-perf-section thead td { background: #eee !important; }
+    #print-perf-section .meta { color: #000 !important; }
+    /* Pass/fail banner uses inline colors set by buildPerfPrint */
   }
   .print-only { display: none; }
 </style>

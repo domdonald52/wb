@@ -539,7 +539,7 @@ const App = (function(){
             <label>Usable fuel on board (${u(ac).vol})</label>
             <div style="display:flex;gap:6px;align-items:center">
               <input type="number" inputmode="decimal" id="in-fuel" value="${fc.fuel}" min="0" max="${ac.usable_fuel}" step="0.5" style="flex:1">
-              <button class="btn secondary" id="in-fuel-max" type="button" style="width:auto;padding:8px 12px;font-size:12px" title="Fill with maximum permissible usable fuel">Max</button>
+              <button class="btn secondary" id="in-fuel-max" type="button" style="width:auto;padding:8px 12px;font-size:12px;white-space:nowrap" title="Calculate and fill the maximum possible usable fuel given station weights, MTOW, tank capacity and CG">Max possible</button>
             </div>
             <small class="help" id="in-fuel-help">tank ${fmt(ac.usable_fuel,1)} ${u(ac).vol} usable · burn ${fmt(ac.burn_rate,1)} ${u(ac).flow}${(ac.fuel_unusable||0) > 0 ? ` · dipstick − ${fmt(ac.fuel_unusable,1)} = usable` : ''}</small>
           </div>
@@ -572,12 +572,19 @@ const App = (function(){
       host.querySelector('#in-fuel-max').addEventListener('click', () => {
         const r = calcReverse(ac);
         fc.fuel = r.bestFuel;
-        document.getElementById('in-fuel').value = fmt(r.bestFuel, 1);
+        const fuelEl = document.getElementById('in-fuel');
+        fuelEl.value = fmt(r.bestFuel, 1);
+        // Flash to make change obvious
+        const origBorder = fuelEl.style.border;
+        const origBg = fuelEl.style.background;
+        fuelEl.style.border = '2px solid #16a34a';
+        fuelEl.style.background = 'rgba(22,163,74,0.15)';
+        setTimeout(() => { fuelEl.style.border = origBorder; fuelEl.style.background = origBg; }, 800);
         const limitedBy = r.bestFuel >= r.maxFuelByMtow - 0.05 ? 'MTOW' : (r.bestFuel >= r.maxFuelByTank - 0.05 ? 'tank capacity' : 'CG envelope');
         const unusable = ac.fuel_unusable || 0;
         const dipstick = r.bestFuel + unusable;
         const help = document.getElementById('in-fuel-help');
-        if (help) help.innerHTML = `Max fill: <strong>${fmt(r.bestFuel,1)} ${u(ac).vol}</strong> usable (limited by ${limitedBy})${unusable > 0 ? ` · dipstick <strong>${fmt(dipstick,1)} ${u(ac).vol}</strong>` : ''}`;
+        if (help) help.innerHTML = `Max possible: <strong>${fmt(r.bestFuel,1)} ${u(ac).vol}</strong> usable (limited by ${limitedBy})${unusable > 0 ? ` · dipstick <strong>${fmt(dipstick,1)} ${u(ac).vol}</strong>` : ''}`;
         refreshEnduranceCheck();
         update();
       });
