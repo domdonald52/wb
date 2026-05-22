@@ -122,7 +122,8 @@ const STORAGE_KEY = 'wb_fleet_v1';
 const SELECTED_KEY = 'wb_selected_v1';
 const RECENT_RUNWAYS_KEY = 'wb_recent_runways_v1';
 const RUNWAYS_KEY = 'wb_runways_v1';
-const SELECTED_RUNWAY_KEY = 'wb_selected_runway_v1';
+const SELECTED_TO_RUNWAY_KEY = 'wb_selected_to_runway_v1';
+const SELECTED_LD_RUNWAY_KEY = 'wb_selected_ld_runway_v1';
 const MAX_RECENT_RUNWAYS = 5;
 
 const App = (function(){
@@ -132,19 +133,23 @@ const App = (function(){
   let stationValues = {};   // {ac_id: {station_idx: weight}}
   let fuelInput = {};       // {ac_id: {fuel: x, duration: y}}
   let legsInput = {};       // {ac_id: [{name, duration, uplift_after}]}
-  let perfInput = {         // performance tab inputs (single, not per-aircraft)
-    runway: { ident: '', heading: 160, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: 'dry', group: null },
-    conditions: { oat: null, qnh: 1013 },  // oat=null means default to ISA at elev
-    wind: { mode: 'dirspeed', dir: 0, speed: 0, headwind_component: 0 },
-    op_type: 'private',     // 'private' or 'air_transport'
-    op_time: 'day',         // 'day' or 'night'
-    perf_method: 'pchart',  // 'pchart' or 'afm' — auto-selected per-aircraft if only one exists
-    use_landing_weight_for_landing: true,
+  let perfInput = {
+    to_runway: { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null },
+    to_condition: 'dry',
+    to_wind: { mode: 'dirspeed', dir: 0, speed: 0, headwind_component: 0 },
+    ld_runway: { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null },
+    ld_condition: 'dry',
+    ld_wind: { mode: 'dirspeed', dir: 0, speed: 0, headwind_component: 0 },
+    conditions: { oat: null, qnh: 1013 },
+    op_type: 'private',
+    op_time: 'day',
+    perf_method: 'pchart',
   };
   let recentRunways = [];
-  let runways = [];                  // user-saved runway database
-  let selectedRunwayId = null;       // currently selected saved runway on Perf tab
-  let editingRunwayId = null;        // runway being edited in modal
+  let runways = [];
+  let selectedToRunwayId = null;
+  let selectedLdRunwayId = null;
+  let editingRunwayId = null;
   let chart = null;
   let editingId = null;     // id of aircraft being edited (null = new)
 
@@ -209,14 +214,26 @@ const App = (function(){
         saveRunways();
       }
     } catch(e){ runways = []; }
-    selectedRunwayId = localStorage.getItem(SELECTED_RUNWAY_KEY) || null;
-    if (selectedRunwayId && !runways.find(r => r.id === selectedRunwayId)) selectedRunwayId = null;
+    selectedToRunwayId = localStorage.getItem(SELECTED_TO_RUNWAY_KEY) || null;
+    selectedLdRunwayId = localStorage.getItem(SELECTED_LD_RUNWAY_KEY) || null;
+    if (selectedToRunwayId && !runways.find(r => r.id === selectedToRunwayId)) selectedToRunwayId = null;
+    if (selectedLdRunwayId && !runways.find(r => r.id === selectedLdRunwayId)) selectedLdRunwayId = null;
+    // Populate perfInput from selected runways
+    const applyRw = (sd, id) => {
+      if (!id) return;
+      const rw = runways.find(x => x.id === id); if (!rw) return;
+      const key = sd === 'ld' ? 'ld_runway' : 'to_runway';
+      perfInput[key] = { id: rw.id, ident: rw.ident || '', heading: rw.heading ?? 0, elev: rw.elev ?? 0, slope: rw.slope ?? 0, tora: rw.tora ?? 0, lda: rw.lda ?? 0, surface: rw.surface || 'paved', group: rw.group ?? null };
+    };
+    applyRw('to', selectedToRunwayId);
+    applyRw('ld', selectedLdRunwayId);
   }
   function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(fleet)); }
   function saveSelected(){ if (selectedId) localStorage.setItem(SELECTED_KEY, selectedId); }
   function saveRecentRunways(){ localStorage.setItem(RECENT_RUNWAYS_KEY, JSON.stringify(recentRunways)); }
   function saveRunways(){ localStorage.setItem(RUNWAYS_KEY, JSON.stringify(runways)); }
-  function saveSelectedRunway(){ if (selectedRunwayId) localStorage.setItem(SELECTED_RUNWAY_KEY, selectedRunwayId); else localStorage.removeItem(SELECTED_RUNWAY_KEY); }
+  function saveSelectedToRunway(){ if (selectedToRunwayId) localStorage.setItem(SELECTED_TO_RUNWAY_KEY, selectedToRunwayId); else localStorage.removeItem(SELECTED_TO_RUNWAY_KEY); }
+  function saveSelectedLdRunway(){ if (selectedLdRunwayId) localStorage.setItem(SELECTED_LD_RUNWAY_KEY, selectedLdRunwayId); else localStorage.removeItem(SELECTED_LD_RUNWAY_KEY); }
 
   // ---- W&B math ----
   function interpLimit(envelope, w, side){
@@ -994,95 +1011,128 @@ const App = (function(){
 
   // ---- printing ----
   function buildPerfPrint(ac){
-    const r = perfInput.runway;
+    const rTo = perfInput.to_runway;
+    const rLd = perfInput.ld_runway;
     const c = perfInput.conditions;
     const P = window.Performance;
     const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
     const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
     const activeMethod = perfInput.perf_method && ((perfInput.perf_method === 'pchart' && pdata) || (perfInput.perf_method === 'afm' && adata)) ? perfInput.perf_method : (pdata ? 'pchart' : (adata ? 'afm' : 'none'));
 
-    let headwind = 0, crosswind = 0;
-    if (perfInput.wind.mode === 'dirspeed'){
-      const wc = P.windComponents(r.heading, perfInput.wind.dir, perfInput.wind.speed);
-      headwind = wc.headwind; crosswind = wc.crosswind;
-    } else {
-      headwind = perfInput.wind.headwind_component;
-    }
+    const winds = ['to','ld'].map(side => {
+      const w = side === 'ld' ? perfInput.ld_wind : perfInput.to_wind;
+      const rwy = side === 'ld' ? rLd : rTo;
+      if (w.mode === 'dirspeed'){
+        const wc = P.windComponents(rwy.heading, w.dir, w.speed);
+        return { side, headwind: wc.headwind, crosswind: wc.crosswind, dir: w.dir, speed: w.speed, mode: 'dirspeed' };
+      }
+      return { side, headwind: w.headwind_component, crosswind: 0, mode: 'component' };
+    });
+    const toW = winds[0], ldW = winds[1];
 
-    const pa = P.pressureAltitude(r.elev, c.qnh);
-    const isa = P.isaTemp(pa);
-    const oat = c.oat === null ? isa : c.oat;
-    const da = P.densityAltitude(pa, oat);
-    const wet = (r.condition === 'wet' || r.condition === 'long_grass');
-    const opKey = deriveOperationKey(perfInput.op_type, perfInput.op_time, r.surface);
+    const paTo = P.pressureAltitude(rTo.elev || 0, c.qnh);
+    const paLd = P.pressureAltitude(rLd.elev || 0, c.qnh);
+    const isaTo = P.isaTemp(paTo);
+    const oat = c.oat === null ? isaTo : c.oat;
+    const daTo = P.densityAltitude(paTo, oat);
+    const daLd = P.densityAltitude(paLd, oat);
+    const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
+    const ldWet = (perfInput.ld_condition === 'wet' || perfInput.ld_condition === 'long_grass');
+    const opKeyTo = deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface);
+    const opKeyLd = deriveOperationKey(perfInput.op_type, perfInput.op_time, rLd.surface);
 
-    let to_d = null, ld_d = null, methodLabel = '';
+    let to_result = null, ld_result = null, methodLabel = '';
     if (activeMethod === 'pchart'){
       methodLabel = `P-chart (${pdata.source})`;
-      to_d = P.pchartTakeoffDistance(pdata, pa, oat, opKey, r.slope, headwind, wet).distance;
-      ld_d = P.pchartLandingDistance(pdata, r.elev, opKey, r.slope, headwind, wet).distance;
+      to_result = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toW.headwind, toWet);
+      ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldW.headwind, ldWet);
     } else if (activeMethod === 'afm'){
-      methodLabel = `POH + AC91-3 factors (${adata.source})`;
+      methodLabel = `Flight Manual + AC91-3 factors (${adata.source})`;
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
-      const tr = P.afmFactorsTakeoff(afmTo, pa, oat, r.surface, r.slope, headwind, wet);
-      const lr = P.afmFactorsLanding(afmLd, pa, oat, r.surface, r.slope, headwind, wet);
-      to_d = tr && tr.distance; ld_d = lr && lr.distance;
+      to_result = P.afmFactorsTakeoff(afmTo, paTo, oat, rTo.surface, rTo.slope, toW.headwind, toWet);
+      ld_result = P.afmFactorsLanding(afmLd, paLd, oat, rLd.surface, rLd.slope, ldW.headwind, ldWet);
+      if (to_result){ to_result.d_ppd = to_result.distance / (to_result.surf_factor * to_result.slope_factor * to_result.wind_factor * to_result.wet_factor); to_result.op_mult = to_result.surf_factor; }
+      if (ld_result){ ld_result.d_ppd = ld_result.distance / (ld_result.surf_factor * ld_result.slope_factor * ld_result.wind_factor * ld_result.wet_factor); ld_result.op_mult = ld_result.surf_factor; }
     }
+    const to_d = to_result && to_result.distance;
+    const ld_d = ld_result && ld_result.distance;
 
-    const surf = ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'})[r.surface] || r.surface;
-    const cond = ({dry:'Dry', wet:'Wet', long_grass:'Long grass'})[r.condition] || r.condition;
+    const surfLbl = sf => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'})[sf] || sf;
+    const condLbl = cd => ({dry:'Dry', wet:'Wet', long_grass:'Long grass'})[cd] || cd;
+    const lineLabels = {private_paved_day:'Private \u2014 Paved \u2014 Day', air_transport_paved_day:'Air Transport \u2014 Paved \u2014 Day', private_grass_day:'Private \u2014 Grass \u2014 Day', air_transport_grass_day:'Air Transport \u2014 Grass \u2014 Day', all_ops_paved_night:'All Ops \u2014 Paved \u2014 Night', all_ops_grass_night:'All Ops \u2014 Grass \u2014 Night'};
+    const fmt0 = v => v == null ? '?' : v.toFixed(0);
+    const fmt1 = v => v == null ? '?' : v.toFixed(1);
+    const fmt2 = v => v.toFixed(3);
+
+    document.getElementById('print-perf-title').textContent = 'Performance sheet';
+    document.getElementById('print-perf-acline').textContent = `${ac.reg} \u2014 ${ac.type}`;
+    document.getElementById('print-perf-when').textContent = new Date().toLocaleString();
+
+    const xwLimit = (ac.crosswind_demonstrated_kt && ac.crosswind_club_kt) ? Math.min(ac.crosswind_demonstrated_kt, ac.crosswind_club_kt) : (ac.crosswind_demonstrated_kt || ac.crosswind_club_kt || null);
+    const violations = [];
+    if (to_d != null && rTo.tora > 0 && to_d > rTo.tora) violations.push(`T/O ${to_d.toFixed(0)} m exceeds TORA ${rTo.tora} m`);
+    if (ld_d != null && rLd.lda > 0 && ld_d > rLd.lda) violations.push(`Landing ${ld_d.toFixed(0)} m exceeds LDA ${rLd.lda} m`);
+    if (xwLimit && toW.crosswind > xwLimit) violations.push(`T/O crosswind ${toW.crosswind.toFixed(1)} kt exceeds limit ${xwLimit} kt`);
+    if (xwLimit && ldW.crosswind > xwLimit) violations.push(`Landing crosswind ${ldW.crosswind.toFixed(1)} kt exceeds limit ${xwLimit} kt`);
+    if (toW.headwind < 0) violations.push(`T/O tailwind ${(-toW.headwind).toFixed(1)} kt`);
+    if (ldW.headwind < 0) violations.push(`Landing tailwind ${(-ldW.headwind).toFixed(1)} kt`);
+    if (ac.group != null && rTo.group != null && ac.group > rTo.group) violations.push(`T/O: Aircraft Group ${ac.group} exceeds runway Group ${rTo.group}`);
+    if (ac.group != null && rLd.group != null && ac.group > rLd.group) violations.push(`Landing: Aircraft Group ${ac.group} exceeds runway Group ${rLd.group}`);
 
     const pb = document.getElementById('print-perf-banner');
-    document.getElementById('print-perf-title').textContent = 'Performance sheet';
-    document.getElementById('print-perf-acline').textContent = `${ac.reg} — ${ac.type}`;
-    document.getElementById('print-perf-when').textContent = new Date().toLocaleString();
-    const violations = [];
-    if (to_d != null && r.tora > 0 && to_d > r.tora) violations.push(`T/O ${to_d.toFixed(0)} m exceeds TORA ${r.tora} m`);
-    if (ld_d != null && r.lda > 0 && ld_d > r.lda) violations.push(`Landing ${ld_d.toFixed(0)} m exceeds LDA ${r.lda} m`);
-    const xwLimit = (ac.crosswind_demonstrated_kt && ac.crosswind_club_kt) ? Math.min(ac.crosswind_demonstrated_kt, ac.crosswind_club_kt) : (ac.crosswind_demonstrated_kt || ac.crosswind_club_kt || null);
-    if (xwLimit && crosswind > xwLimit) violations.push(`Crosswind ${crosswind.toFixed(1)} kt exceeds limit ${xwLimit} kt`);
-    if (headwind < 0) violations.push(`Tailwind ${(-headwind).toFixed(1)} kt`);
-    if (ac.group != null && r.group != null && ac.group > r.group) violations.push(`Aircraft Group ${ac.group} exceeds runway Group ${r.group}`);
     if (violations.length === 0){
       pb.style.background = '#e8f5ec'; pb.style.color = '#060'; pb.style.borderColor = '#060';
       pb.textContent = '✓ Within all performance limits.';
     } else {
       pb.style.background = '#fde8e8'; pb.style.color = '#a00'; pb.style.borderColor = '#a00';
-      pb.innerHTML = '<strong>⚠ Issues:</strong> ' + violations.join(' · ');
+      pb.innerHTML = '<strong>⚠ Issues:</strong> ' + violations.join(' \u00b7 ');
     }
 
-    const fmt0 = v => v == null ? '?' : v.toFixed(0);
-    const fmt1 = v => v == null ? '?' : v.toFixed(1);
-    const toMargin = (to_d != null && r.tora > 0) ? ((1 - to_d/r.tora)*100).toFixed(0)+'%' : '—';
-    const ldMargin = (ld_d != null && r.lda > 0) ? ((1 - ld_d/r.lda)*100).toFixed(0)+'%' : '—';
-    const lineLabels = {private_paved_day:'Private — Paved — Day', air_transport_paved_day:'Air Transport — Paved — Day', private_grass_day:'Private — Grass — Day', air_transport_grass_day:'Air Transport — Grass — Day', all_ops_paved_night:'All Ops — Paved — Night', all_ops_grass_night:'All Ops — Grass — Night'};
+    const toMargin = (to_d != null && rTo.tora > 0) ? ((1 - to_d/rTo.tora)*100).toFixed(0)+'%' : '\u2014';
+    const ldMargin = (ld_d != null && rLd.lda > 0) ? ((1 - ld_d/rLd.lda)*100).toFixed(0)+'%' : '\u2014';
+
+    const rwyBox = (label, r, cond, w) => `
+      <div style="border:1px solid #999;padding:8px;border-radius:4px">
+        <div style="font-weight:600;font-size:10pt;margin-bottom:4px">${label} <span style="font-weight:400;color:#a00;font-size:8pt">⚠ Verify against current AIP</span></div>
+        <div style="font-size:9pt;line-height:1.5">
+          <strong>${r.ident || '(no ident)'}</strong> \u00b7 Hdg ${r.heading}°M<br>
+          Elev ${r.elev}\u2032 \u00b7 Slope ${r.slope}%<br>
+          TORA ${r.tora} m \u00b7 LDA ${r.lda} m<br>
+          ${surfLbl(r.surface)} \u00b7 ${condLbl(cond)}${r.group != null ? ' \u00b7 Group ' + r.group : ''}<br>
+          ${w.mode === 'dirspeed' && w.speed > 0
+            ? `Wind ${w.dir}°M / ${w.speed} kt \u00b7 HW ${fmt1(w.headwind)} \u00b7 XW ${fmt1(w.crosswind)} kt`
+            : `HW component ${fmt1(w.headwind)} kt`}
+        </div>
+      </div>`;
+
+    const breakdownTable = (label, runway, w, wet, result) => {
+      if (!result) return '';
+      const o = result.op_mult, sl = result.slope_factor, wf = result.wind_factor, wt = result.wet_factor;
+      return `
+        <table style="width:100%;border-collapse:collapse;margin:6px 0;font-size:9pt">
+          <tr style="background:#eee"><td colspan="3" style="border:1px solid #999;padding:4px"><strong>${label}${runway.ident ? ' \u2014 ' + runway.ident : ''} breakdown</strong></td></tr>
+          <tr><td style="border:1px solid #999;padding:4px">PPD reference</td><td colspan="2" style="border:1px solid #999;padding:4px;text-align:right">${result.d_ppd.toFixed(0)} m</td></tr>
+          <tr><td style="border:1px solid #999;padding:4px">× Operation</td><td style="border:1px solid #999;padding:4px;text-align:right">${fmt2(o)}</td><td style="border:1px solid #999;padding:4px;text-align:right">${(result.d_ppd*o).toFixed(0)} m</td></tr>
+          <tr><td style="border:1px solid #999;padding:4px">× Slope (${runway.slope}%)</td><td style="border:1px solid #999;padding:4px;text-align:right">${fmt2(sl)}</td><td style="border:1px solid #999;padding:4px;text-align:right">${(result.d_ppd*o*sl).toFixed(0)} m</td></tr>
+          <tr><td style="border:1px solid #999;padding:4px">× Wind (${w.headwind.toFixed(1)} kt)</td><td style="border:1px solid #999;padding:4px;text-align:right">${fmt2(wf)}</td><td style="border:1px solid #999;padding:4px;text-align:right">${(result.d_ppd*o*sl*wf).toFixed(0)} m</td></tr>
+          ${wet ? `<tr><td style="border:1px solid #999;padding:4px">× Wet</td><td style="border:1px solid #999;padding:4px;text-align:right">${fmt2(wt)}</td><td style="border:1px solid #999;padding:4px;text-align:right">${result.distance.toFixed(0)} m</td></tr>` : ''}
+        </table>`;
+    };
 
     document.getElementById('print-perf-body').innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
-        <div style="border:1px solid #999;padding:8px;border-radius:4px">
-          <div style="font-weight:600;font-size:10pt;margin-bottom:4px">Runway <span style="font-weight:400;color:#a00;font-size:8pt">⚠ Verify against current AIP</span></div>
-          <div style="font-size:9pt;line-height:1.5">
-            <strong>${r.ident || '(no ident)'}</strong> · Hdg ${r.heading}°M<br>
-            Elev ${r.elev}' · Slope ${r.slope}%<br>
-            TORA ${r.tora} m · LDA ${r.lda} m<br>
-            ${surf} · ${cond}${r.group != null ? ' · Group ' + r.group : ''}
-          </div>
-        </div>
-        <div style="border:1px solid #999;padding:8px;border-radius:4px">
-          <div style="font-weight:600;font-size:10pt;margin-bottom:4px">Conditions</div>
-          <div style="font-size:9pt;line-height:1.5">
-            OAT ${fmt0(oat)}°C · QNH ${c.qnh} hPa<br>
-            PA ${fmt0(pa)}' · ISA ${fmt0(isa)}°C · DA ${fmt0(da)}'<br>
-            ${perfInput.wind.mode === 'dirspeed' && perfInput.wind.speed > 0
-              ? `Wind ${perfInput.wind.dir}°M / ${perfInput.wind.speed} kt<br>HW ${fmt1(headwind)} kt · XW ${fmt1(crosswind)} kt${xwLimit ? ' (limit ' + xwLimit + ')' : ''}`
-              : `HW component: ${fmt1(headwind)} kt`}
-          </div>
-        </div>
+        ${rwyBox('Takeoff runway', rTo, perfInput.to_condition, toW)}
+        ${rwyBox('Landing runway', rLd, perfInput.ld_condition, ldW)}
       </div>
       <div style="border:1px solid #999;padding:8px;border-radius:4px;margin-bottom:8px;font-size:9pt">
-        <strong>Method:</strong> ${methodLabel || 'none'}${activeMethod === 'pchart' ? ' — CASO 4 baked into chart' : (activeMethod === 'afm' ? ' — CASO 4 (AC91-3) factors applied' : '')}
-        ${activeMethod === 'pchart' ? '<br><strong>Chart line:</strong> ' + lineLabels[opKey] : '<br><strong>Surface:</strong> ' + surf}
+        <strong>Atmospheric:</strong> OAT ${fmt0(oat)}°C \u00b7 QNH ${c.qnh} hPa \u00b7
+        T/O: PA ${fmt0(paTo)}\u2032 \u00b7 DA ${fmt0(daTo)}\u2032 \u00b7
+        Landing: PA ${fmt0(paLd)}\u2032 \u00b7 DA ${fmt0(daLd)}\u2032
+      </div>
+      <div style="border:1px solid #999;padding:8px;border-radius:4px;margin-bottom:8px;font-size:9pt">
+        <strong>Method:</strong> ${methodLabel || 'none'}${activeMethod === 'pchart' ? ' \u2014 CASO 4 baked into chart' : (activeMethod === 'afm' ? ' \u2014 CASO 4 (AC91-3) factors applied' : '')}
+        ${activeMethod === 'pchart' ? '<br><strong>T/O chart line:</strong> ' + lineLabels[opKeyTo] + '<br><strong>Landing chart line:</strong> ' + lineLabels[opKeyLd] : ''}
       </div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9pt">
         <thead><tr style="background:#eee">
@@ -1094,21 +1144,23 @@ const App = (function(){
         </tr></thead>
         <tbody>
           <tr>
-            <td style="border:1px solid #999;padding:6px">T/O distance to 50' (max performance)</td>
+            <td style="border:1px solid #999;padding:6px">T/O distance to 50\u2032${rTo.ident ? ' (' + rTo.ident + ')' : ''}</td>
             <td style="border:1px solid #999;padding:6px;text-align:right">${fmt0(to_d)} m</td>
-            <td style="border:1px solid #999;padding:6px;text-align:right">${r.tora || '—'} m</td>
+            <td style="border:1px solid #999;padding:6px;text-align:right">${rTo.tora || '\u2014'} m</td>
             <td style="border:1px solid #999;padding:6px;text-align:right">${toMargin}</td>
-            <td style="border:1px solid #999;padding:6px;text-align:center">${to_d != null && r.tora > 0 ? (to_d <= r.tora ? '<span style="color:#060">✓ GO</span>' : '<span style="color:#a00">✗ NO-GO</span>') : '—'}</td>
+            <td style="border:1px solid #999;padding:6px;text-align:center">${to_d != null && rTo.tora > 0 ? (to_d <= rTo.tora ? '<span style="color:#060">✓ GO</span>' : '<span style="color:#a00">✗ NO-GO</span>') : '\u2014'}</td>
           </tr>
           <tr>
-            <td style="border:1px solid #999;padding:6px">Landing distance from 50' (full flap)</td>
+            <td style="border:1px solid #999;padding:6px">Landing distance from 50\u2032${rLd.ident ? ' (' + rLd.ident + ')' : ''}</td>
             <td style="border:1px solid #999;padding:6px;text-align:right">${fmt0(ld_d)} m</td>
-            <td style="border:1px solid #999;padding:6px;text-align:right">${r.lda || '—'} m</td>
+            <td style="border:1px solid #999;padding:6px;text-align:right">${rLd.lda || '\u2014'} m</td>
             <td style="border:1px solid #999;padding:6px;text-align:right">${ldMargin}</td>
-            <td style="border:1px solid #999;padding:6px;text-align:center">${ld_d != null && r.lda > 0 ? (ld_d <= r.lda ? '<span style="color:#060">✓ GO</span>' : '<span style="color:#a00">✗ NO-GO</span>') : '—'}</td>
+            <td style="border:1px solid #999;padding:6px;text-align:center">${ld_d != null && rLd.lda > 0 ? (ld_d <= rLd.lda ? '<span style="color:#060">✓ GO</span>' : '<span style="color:#a00">✗ NO-GO</span>') : '\u2014'}</td>
           </tr>
         </tbody>
       </table>
+      ${breakdownTable('Takeoff', rTo, toW, toWet, to_result)}
+      ${breakdownTable('Landing', rLd, ldW, ldWet, ld_result)}
     `;
   }
 
@@ -1127,42 +1179,21 @@ const App = (function(){
       return `${s.name}: ${fmt(w)} ${u(ac).w}`;
     }).join(' · ');
     let loadingHtml = `<strong>Loading:</strong> ${stationStr}`;
-
-    if (mode === 'multileg'){
-      const legs = legsInput[ac.id] || [];
-      const startFuel = fc.fuel !== undefined ? fc.fuel : ac.usable_fuel;
-      const legParts = legs.map((l, i) => {
-        const uplift = (i > 0 && l.uplift_before > 0) ? ` (+${fmt(l.uplift_before,1)} ${u(ac).vol})` : '';
-        return `${l.name || 'Leg '+(i+1)}: ${fmt(l.duration,2)} h${uplift}`;
-      }).join(' · ');
-      loadingHtml += `<br><strong>Start fuel:</strong> ${fmt(startFuel,1)} ${u(ac).vol} · <strong>Legs:</strong> ${legParts}`;
-      const totalDur = legs.reduce((s, l) => s + (l.duration||0), 0);
-      const totalUplift = legs.reduce((s, l) => s + (l.uplift_before||0), 0);
-      if (ac.burn_rate > 0){
-        const totalFuelUsed = totalDur * ac.burn_rate;
-        const finalFuel = Math.max(0, startFuel + totalUplift - totalFuelUsed);
-        const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
-        const unusable = ac.fuel_unusable || 0;
-        const dipstick = startFuel + unusable;
-        loadingHtml += `<br><strong>Total flight time:</strong> ${fmt(totalDur,2)} h · <strong>Fuel used:</strong> ${fmt(totalFuelUsed,1)} ${u(ac).vol} · <strong>Final fuel:</strong> ${fmt(finalFuel,1)} ${u(ac).vol} (reserve ${fmt(reserveFuel,1)})${unusable > 0 ? ` · <strong>Start dipstick:</strong> ${fmt(dipstick,1)} ${u(ac).vol}` : ''}`;
-      }
-    } else {
-      const fuel = fc.fuel !== undefined ? fc.fuel : ac.usable_fuel;
-      const dur = fc.duration !== undefined ? fc.duration : 1.0;
-      loadingHtml += `<br><strong>Fuel:</strong> ${fmt(fuel,1)} ${u(ac).vol} · <strong>Flight time:</strong> ${fmt(dur,2)} h`;
-      if (ac.burn_rate > 0){
-        const endurance = fuel / ac.burn_rate;
-        const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
-        const usableEnd = Math.max(0, (fuel - reserveFuel) / ac.burn_rate);
-        const unusable = ac.fuel_unusable || 0;
-        const dipstick = fuel + unusable;
-        loadingHtml += `<br><strong>Endurance:</strong> ${fmt(endurance,2)} h to dry · ${fmt(usableEnd,2)} h after ${ac.reserve_minutes}-min reserve${unusable > 0 ? ` · <strong>Dipstick:</strong> ${fmt(dipstick,1)} ${u(ac).vol} (incl. ${fmt(unusable,1)} unusable)` : ''}`;
-      }
+    const fuel = fc.fuel !== undefined ? fc.fuel : ac.usable_fuel;
+    const dur = fc.duration !== undefined ? fc.duration : 1.0;
+    loadingHtml += `<br><strong>Fuel:</strong> ${fmt(fuel,1)} ${u(ac).vol} · <strong>Flight time:</strong> ${fmt(dur,2)} h`;
+    if (ac.burn_rate > 0){
+      const endurance = fuel / ac.burn_rate;
+      const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
+      const usableEnd = Math.max(0, (fuel - reserveFuel) / ac.burn_rate);
+      const unusable = ac.fuel_unusable || 0;
+      const dipstick = fuel + unusable;
+      loadingHtml += `<br><strong>Endurance:</strong> ${fmt(endurance,2)} h to dry · ${fmt(usableEnd,2)} h after ${ac.reserve_minutes}-min reserve${unusable > 0 ? ` · <strong>Dipstick:</strong> ${fmt(dipstick,1)} ${u(ac).vol} (incl. ${fmt(unusable,1)} unusable)` : ''}`;
     }
     document.getElementById('print-loading').innerHTML = loadingHtml;
 
     const pb = document.getElementById('print-banner');
-    const violations = (mode === 'multileg' ? calcMultileg(ac) : calc(ac)).violations;
+    const violations = calc(ac).violations;
     if (violations.length === 0){
       pb.className = 'print-only ok';
       pb.textContent = '✓ Within all W&B limits.';
@@ -1173,11 +1204,12 @@ const App = (function(){
 
     // --- Build performance section if data permits ---
     const perfSection = document.getElementById('print-perf-section');
-    const r = perfInput.runway;
+    const rTo = perfInput.to_runway;
+    const rLd = perfInput.ld_runway;
     const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
     const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
     const hasPerfData = pdata || adata;
-    const hasRunway = r.ident || (r.tora > 0) || (r.lda > 0);
+    const hasRunway = (rTo.ident || rTo.tora > 0 || rTo.lda > 0) || (rLd.ident || rLd.tora > 0 || rLd.lda > 0);
     if (hasPerfData && hasRunway){
       perfSection.style.display = '';
       buildPerfPrint(ac);
@@ -1188,7 +1220,7 @@ const App = (function(){
         // user is on Perf tab with no runway — make this visible in the banner
         pb.innerHTML += '<br><small>Performance sheet skipped: no runway entered.</small>';
       } else if (!hasPerfData && (hasRunway || mode === 'performance')){
-        pb.innerHTML += `<br><small>Performance sheet skipped: ${ac.reg} has no P-chart or POH data configured.</small>`;
+        pb.innerHTML += `<br><small>Performance sheet skipped: ${ac.reg} has no P-chart or Flight Manual data configured.</small>`;
       }
     }
 
@@ -1215,23 +1247,44 @@ const App = (function(){
   function renderPerformance(){
     const ac = fleet.find(a => a.id === selectedId);
     if (!ac) return;
-    document.getElementById('rwy-condition').value = perfInput.runway.condition || 'dry';
+    document.getElementById('to-condition').value = perfInput.to_condition || 'dry';
+    document.getElementById('ld-condition').value = perfInput.ld_condition || 'dry';
     document.getElementById('cond-oat').value = perfInput.conditions.oat ?? '';
     document.getElementById('cond-qnh').value = perfInput.conditions.qnh ?? 1013;
     document.getElementById('perf-op-type').value = perfInput.op_type;
     document.getElementById('perf-op-time').value = perfInput.op_time;
-    renderSavedRunwaysPicker();
-    renderRunwaySummary();
-    renderWindInputs();
+    renderSavedRunwaysPicker('to');
+    renderSavedRunwaysPicker('ld');
+    renderRunwaySummary('to');
+    renderRunwaySummary('ld');
+    renderWindInputs('to');
+    renderWindInputs('ld');
     bindPerfHandlers();
     computeAndRenderPerf();
   }
 
-  function renderRunwaySummary(){
-    const host = document.getElementById('rwy-summary');
+  function _side(side){
+    return side === 'ld' ? { rw: 'ld_runway', wind: 'ld_wind', cond: 'ld_condition', sel: 'selectedLdRunwayId',
+                              pickerId: 'saved-ld-rwy-select', summaryId: 'ld-rwy-summary',
+                              condId: 'ld-condition', menuId: 'ld-rwy-menu', menuBtnId: 'ld-rwy-menu-btn',
+                              windInputsId: 'ld-wind-inputs', windCompId: 'ld-wind-components' }
+                          : { rw: 'to_runway', wind: 'to_wind', cond: 'to_condition', sel: 'selectedToRunwayId',
+                              pickerId: 'saved-to-rwy-select', summaryId: 'to-rwy-summary',
+                              condId: 'to-condition', menuId: 'to-rwy-menu', menuBtnId: 'to-rwy-menu-btn',
+                              windInputsId: 'to-wind-inputs', windCompId: 'to-wind-components' };
+  }
+  function _selId(side){ return side === 'ld' ? selectedLdRunwayId : selectedToRunwayId; }
+  function _setSelId(side, id){
+    if (side === 'ld'){ selectedLdRunwayId = id; saveSelectedLdRunway(); }
+    else { selectedToRunwayId = id; saveSelectedToRunway(); }
+  }
+
+  function renderRunwaySummary(side){
+    const k = _side(side);
+    const host = document.getElementById(k.summaryId);
     if (!host) return;
-    const r = perfInput.runway;
-    if (!selectedRunwayId || !r.ident){
+    const r = perfInput[k.rw];
+    if (!_selId(side) || !r.ident){
       host.innerHTML = '<em>No runway selected. Use the cog menu to add or pick one.</em>';
       return;
     }
@@ -1239,32 +1292,34 @@ const App = (function(){
     const parts = [
       `<strong>${r.ident}</strong>`,
       `Hdg ${r.heading}°M`,
-      `Elev ${r.elev}′`,
+      `Elev ${r.elev}\u2032`,
       `Slope ${r.slope >= 0 ? '+' : ''}${r.slope}%`,
       `TORA ${r.tora} m`,
       `LDA ${r.lda} m`,
       surfaceLabel,
     ];
     if (r.group != null) parts.push(`Group ${r.group}`);
-    host.innerHTML = parts.join(' · ');
+    host.innerHTML = parts.join(' \u00b7 ');
   }
 
-  function renderSavedRunwaysPicker(){
-    const sel = document.getElementById('saved-rwy-select');
+  function renderSavedRunwaysPicker(side){
+    const k = _side(side);
+    const sel = document.getElementById(k.pickerId);
     if (!sel) return;
     const surfaceLabel = s => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'}[s] || s || 'Paved');
+    const curId = _selId(side);
     sel.innerHTML = '<option value="">— select a runway —</option>' +
       runways.map(rw => {
         const parts = (rw.ident || '').trim().split(/\s+/);
         const icao = parts[0] || '?';
         const dir = parts.slice(1).join(' ') || '?';
-        return `<option value="${rw.id}" ${rw.id===selectedRunwayId?'selected':''}>${icao} - ${dir} - ${surfaceLabel(rw.surface)}</option>`;
+        return `<option value="${rw.id}" ${rw.id===curId?'selected':''}>${icao} - ${dir} - ${surfaceLabel(rw.surface)}</option>`;
       }).join('');
-    sel.value = selectedRunwayId || '';
+    sel.value = curId || '';
   }
 
   function bindPerfHandlers(){
-    const fields = ['rwy-condition','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
+    const fields = ['to-condition','ld-condition','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
     fields.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -1274,7 +1329,8 @@ const App = (function(){
   }
 
   function onPerfFieldChange(){
-    perfInput.runway.condition = document.getElementById('rwy-condition').value;
+    perfInput.to_condition = document.getElementById('to-condition').value;
+    perfInput.ld_condition = document.getElementById('ld-condition').value;
     const oat_val = document.getElementById('cond-oat').value;
     perfInput.conditions.oat = oat_val === '' ? null : parseFloat(oat_val);
     perfInput.conditions.qnh = parseFloat(document.getElementById('cond-qnh').value) || 1013;
@@ -1283,105 +1339,116 @@ const App = (function(){
     computeAndRenderPerf();
   }
 
-  function setWindMode(m){
-    perfInput.wind.mode = m;
-    document.querySelectorAll('[data-wind-mode]').forEach(b => {
+  function setWindMode(side, m){
+    const k = _side(side);
+    perfInput[k.wind].mode = m;
+    document.querySelectorAll(`[data-wind-side="${side}"]`).forEach(b => {
       const isActive = b.dataset.windMode === m;
-      b.style.background = isActive ? 'var(--accent-2)' : '';
+      b.style.background = isActive ? '#d97706' : '';
       b.style.color = isActive ? '#fff' : '';
     });
-    renderWindInputs();
+    renderWindInputs(side);
     computeAndRenderPerf();
   }
 
-  function renderWindInputs(){
-    const host = document.getElementById('wind-inputs');
+  function renderWindInputs(side){
+    const k = _side(side);
+    const host = document.getElementById(k.windInputsId);
     if (!host) return;
-    if (perfInput.wind.mode === 'dirspeed'){
+    const w = perfInput[k.wind];
+    if (w.mode === 'dirspeed'){
       host.innerHTML = `
         <div class="row">
-          <div><label>Direction (°M)</label><input type="number" inputmode="decimal" id="wind-dir" min="0" max="360" step="10" value="${perfInput.wind.dir || ''}"><small class="help">degrees magnetic (match runway hdg)</small></div>
-          <div><label>Speed (kt)</label><input type="number" inputmode="decimal" id="wind-spd" min="0" step="1" value="${perfInput.wind.speed || ''}"><small class="help">wind speed in knots</small></div>
+          <div><label>Direction (°M)</label><input type="number" inputmode="decimal" id="${side}-wind-dir" min="0" max="360" step="10" value="${w.dir || ''}"><small class="help">degrees magnetic</small></div>
+          <div><label>Speed (kt)</label><input type="number" inputmode="decimal" id="${side}-wind-spd" min="0" step="1" value="${w.speed || ''}"><small class="help">wind speed in knots</small></div>
         </div>
       `;
-      document.getElementById('wind-dir').oninput = e => { perfInput.wind.dir = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
-      document.getElementById('wind-spd').oninput = e => { perfInput.wind.speed = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
+      document.getElementById(side+'-wind-dir').oninput = e => { w.dir = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
+      document.getElementById(side+'-wind-spd').oninput = e => { w.speed = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
     } else {
       host.innerHTML = `
         <div class="row">
-          <div><label>Headwind component (kt)</label><input type="number" inputmode="decimal" id="wind-hwc" step="1" value="${perfInput.wind.headwind_component || ''}"><small class="help">negative = tailwind</small></div>
+          <div><label>Headwind component (kt)</label><input type="number" inputmode="decimal" id="${side}-wind-hwc" step="1" value="${w.headwind_component || ''}"><small class="help">negative = tailwind</small></div>
         </div>
       `;
-      document.getElementById('wind-hwc').oninput = e => { perfInput.wind.headwind_component = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
+      document.getElementById(side+'-wind-hwc').oninput = e => { w.headwind_component = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
     }
-    // Apply button styling
-    document.querySelectorAll('[data-wind-mode]').forEach(b => {
-      const isActive = b.dataset.windMode === perfInput.wind.mode;
-      b.style.background = isActive ? 'var(--accent-2)' : '';
+    document.querySelectorAll(`[data-wind-side="${side}"]`).forEach(b => {
+      const isActive = b.dataset.windMode === w.mode;
+      b.style.background = isActive ? '#d97706' : '';
       b.style.color = isActive ? '#fff' : '';
     });
   }
 
-  function computeAndRenderPerf(){
-    const ac = fleet.find(a => a.id === selectedId);
-    if (!ac) return;
-    const r = perfInput.runway;
-    const c = perfInput.conditions;
-    const P = window.Performance;
-
-    // Wind
+  // Compute wind components and a calm-warning HTML snippet for one side
+  function _windFor(side, runway){
+    const k = _side(side);
+    const w = perfInput[k.wind];
     let headwind = 0, crosswind = 0;
-    if (perfInput.wind.mode === 'dirspeed'){
-      const wc = P.windComponents(r.heading, perfInput.wind.dir, perfInput.wind.speed);
-      headwind = wc.headwind;
-      crosswind = wc.crosswind;
+    if (w.mode === 'dirspeed'){
+      const wc = window.Performance.windComponents(runway.heading, w.dir, w.speed);
+      headwind = wc.headwind; crosswind = wc.crosswind;
     } else {
-      headwind = perfInput.wind.headwind_component;
-      crosswind = 0;
+      headwind = w.headwind_component;
     }
-    const wcEl = document.getElementById('wind-components');
+    const wcEl = document.getElementById(k.windCompId);
     if (wcEl){
-      if (perfInput.wind.mode === 'dirspeed' && perfInput.wind.speed > 0){
+      if (w.mode === 'dirspeed' && w.speed > 0){
         wcEl.innerHTML = `→ Headwind: <strong>${headwind.toFixed(1)} kt</strong> · Crosswind: <strong>${crosswind.toFixed(1)} kt</strong>`;
-      } else if (perfInput.wind.mode === 'component' && perfInput.wind.headwind_component !== 0){
+      } else if (w.mode === 'component' && w.headwind_component !== 0){
         wcEl.innerHTML = '';
       } else {
         wcEl.innerHTML = `<span style="color:var(--warn)">⚠ No wind entered — calculation assumes calm. Confirm against ATIS/METAR.</span>`;
       }
     }
+    return { headwind, crosswind, mode: w.mode, speed: w.speed };
+  }
 
-    // Atmospheric
-    const pa = P.pressureAltitude(r.elev, c.qnh);
-    const isa = P.isaTemp(pa);
-    const oat = c.oat === null ? isa : c.oat;
-    const da = P.densityAltitude(pa, oat);
+  function computeAndRenderPerf(){
+    const ac = fleet.find(a => a.id === selectedId);
+    if (!ac) return;
+    const rTo = perfInput.to_runway;
+    const rLd = perfInput.ld_runway;
+    const c = perfInput.conditions;
+    const P = window.Performance;
+
+    // Per-side winds
+    const toWind = _windFor('to', rTo);
+    const ldWind = _windFor('ld', rLd);
+
+    // Atmospheric — use T/O elevation for PA reference (most common); show both ifferent
+    const paTo = P.pressureAltitude(rTo.elev || 0, c.qnh);
+    const paLd = P.pressureAltitude(rLd.elev || 0, c.qnh);
+    const isaTo = P.isaTemp(paTo);
+    const isaLd = P.isaTemp(paLd);
+    const oat = c.oat === null ? isaTo : c.oat;  // OAT defaults to T/O ISA if unset
+    const daTo = P.densityAltitude(paTo, oat);
+    const daLd = P.densityAltitude(paLd, oat);
     const aiEl = document.getElementById('atmospheric-info');
     if (aiEl){
-      aiEl.innerHTML = `PA: <strong>${pa.toFixed(0)}'</strong> · ISA: <strong>${isa.toFixed(0)}°C</strong> · Density Altitude: <strong>${da.toFixed(0)}'</strong>${c.oat===null?' <em>(using ISA — enter OAT to override)</em>':''}`;
+      const sameElev = (rTo.elev === rLd.elev);
+      if (sameElev){
+        aiEl.innerHTML = `PA: <strong>${paTo.toFixed(0)}\u2032</strong> · ISA: <strong>${isaTo.toFixed(0)}°C</strong> · Density Altitude: <strong>${daTo.toFixed(0)}\u2032</strong>${c.oat===null?' <em>(using ISA \u2014 enter OAT to override)</em>':''}`;
+      } else {
+        aiEl.innerHTML = `T/O: PA ${paTo.toFixed(0)}\u2032 · DA ${daTo.toFixed(0)}\u2032 \u00b7 Landing: PA ${paLd.toFixed(0)}\u2032 · DA ${daLd.toFixed(0)}\u2032${c.oat===null?' <em>(using ISA at T/O elev)</em>':''}`;
+      }
     }
 
-    const wet = (r.condition === 'wet' || r.condition === 'long_grass');
+    const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
+    const ldWet = (perfInput.ld_condition === 'wet' || perfInput.ld_condition === 'long_grass');
 
     const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
     const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
     const hasP = !!pdata, hasA = !!adata;
 
-    // Determine active method based on availability + user preference
     let activeMethod;
     if (hasP && hasA){
-      // Both available — honour user toggle
       activeMethod = perfInput.perf_method === 'afm' ? 'afm' : 'pchart';
-    } else if (hasP){
-      activeMethod = 'pchart';
-    } else if (hasA){
-      activeMethod = 'afm';
-    } else {
-      activeMethod = 'none';
-    }
-    // Sync state
+    } else if (hasP){ activeMethod = 'pchart'; }
+    else if (hasA){ activeMethod = 'afm'; }
+    else { activeMethod = 'none'; }
     if (activeMethod !== 'none') perfInput.perf_method = activeMethod;
 
-    // Render toggle row
     const toggleHost = document.getElementById('perf-method-toggle');
     if (toggleHost){
       if (hasP && hasA){
@@ -1392,9 +1459,9 @@ const App = (function(){
           btn.style.background = isActive ? '#d97706' : '';
           btn.style.color = isActive ? '#fff' : '';
           btn.disabled = false;
+          btn.style.opacity = '1';
         });
       } else if (hasP || hasA){
-        // Show as info-only (disabled, indicating which one)
         toggleHost.style.display = '';
         ['pchart','afm'].forEach(m => {
           const btn = document.getElementById('method-' + m);
@@ -1409,82 +1476,57 @@ const App = (function(){
       }
     }
 
-    // Derive the canonical operation key from the user's choices + runway surface
-    const opKey = deriveOperationKey(perfInput.op_type, perfInput.op_time, r.surface);
-    const surfaceIsGrass = (r.surface !== 'paved');
+    const opKeyTo = deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface);
+    const opKeyLd = deriveOperationKey(perfInput.op_type, perfInput.op_time, rLd.surface);
     const opLabelMap = {
-      private_paved_day:        'Private — Paved — Day',
-      air_transport_paved_day:  'Air Transport — Paved — Day',
-      private_grass_day:        'Private — Grass — Day',
-      air_transport_grass_day:  'Air Transport — Grass — Day',
-      all_ops_paved_night:      'All Ops — Paved — Night',
-      all_ops_grass_night:      'All Ops — Grass — Night',
+      private_paved_day:        'Private \u2014 Paved \u2014 Day',
+      air_transport_paved_day:  'Air Transport \u2014 Paved \u2014 Day',
+      private_grass_day:        'Private \u2014 Grass \u2014 Day',
+      air_transport_grass_day:  'Air Transport \u2014 Grass \u2014 Day',
+      all_ops_paved_night:      'All Ops \u2014 Paved \u2014 Night',
+      all_ops_grass_night:      'All Ops \u2014 Grass \u2014 Night',
     };
 
-    // Annotate the Surface label
-    const sln = document.getElementById('surface-label-note');
-    if (sln) sln.textContent = activeMethod === 'pchart' ? '· feeds Operation line' : (activeMethod === 'afm' ? '· used directly (AC91-3 factor)' : '');
-
-    // Show derived line
     const opDerived = document.getElementById('perf-op-derived');
     if (opDerived){
-      const chartSurfaceNote = (activeMethod === 'pchart' && r.surface !== 'paved' && r.surface !== 'grass')
-        ? `<br><span style="color:var(--warn)">⚠ Chart has only Paved and Grass lines — your "${r.surface.replace('_',' ')}" surface is being treated as Grass. Use POH+AC91-3 mode for accurate Metal/Rolled earth/Coral factors.</span>`
-        : '';
-      opDerived.innerHTML = `→ P-chart line: <strong>${opLabelMap[opKey]}</strong> (auto-set from surface)${chartSurfaceNote}`;
+      const noteFor = (surface) => (activeMethod === 'pchart' && surface !== 'paved' && surface !== 'grass')
+        ? ` <span style="color:var(--warn)">(chart treats "${surface.replace('_',' ')}" as Grass)</span>` : '';
+      opDerived.innerHTML = `T/O line: <strong>${opLabelMap[opKeyTo]}</strong>${noteFor(rTo.surface)}<br>Landing line: <strong>${opLabelMap[opKeyLd]}</strong>${noteFor(rLd.surface)}`;
     }
 
-    // Air Transport warning
     const opWarn = document.getElementById('perf-op-warning');
     if (opWarn){
       if (perfInput.op_type === 'air_transport'){
-        opWarn.innerHTML = `<div class="banner warn" style="margin:0;font-size:12px">⚠ Air Transport operation selected. This app is normally used for private GA — confirm Air Transport is correct for this flight.</div>`;
-      } else {
-        opWarn.innerHTML = '';
-      }
+        opWarn.innerHTML = `<div class="banner warn" style="margin:0;font-size:12px">⚠ Air Transport operation selected. This app is normally used for private GA \u2014 confirm Air Transport is correct for this flight.</div>`;
+      } else { opWarn.innerHTML = ''; }
     }
 
     let to_result = null, ld_result = null;
     let methodNote = '';
-
-    // Show/hide Operation card: relevant only in P-chart mode
     const opCard = document.getElementById('perf-op-card');
     if (opCard) opCard.classList.toggle('hidden', activeMethod !== 'pchart');
 
     if (activeMethod === 'pchart'){
-      methodNote = `Method: <strong>P-chart</strong> (${pdata.source}). CASO 4 factors are <strong>baked into the chart</strong> — not re-applied. Inputs: pressure altitude, OAT, slope, wind, operation line (set by surface + day/night).`;
-      to_result = P.pchartTakeoffDistance(pdata, pa, oat, opKey, r.slope, headwind, wet);
-      ld_result = P.pchartLandingDistance(pdata, r.elev, opKey, r.slope, headwind, wet);
+      methodNote = `Method: <strong>P-chart</strong> (${pdata.source}). CASO 4 baked in.`;
+      to_result = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toWind.headwind, toWet);
+      ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
     } else if (activeMethod === 'afm'){
-      methodNote = `Method: <strong>POH + AC91-3 (CASO 4) factors</strong> (${adata.source}). Inputs: POH base distance × PA correction × temp correction, then × surface (Table 1) × slope (Table 2) × wind (1.5×/0.5×) × wet (+15%).`;
-      const afmTo = {
-        to_base_msl_isa_m: adata.takeoff.base_msl_isa_m,
-        to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000,
-        to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c,
-        to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0,
-        mtow_kg: ac.mtow, current_weight_kg: null,
-      };
-      const afmLd = {
-        ld_base_msl_isa_m: adata.landing.base_msl_isa_m,
-        ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000,
-        ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c,
-        ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0,
-        mtow_kg: ac.mtow, current_landing_weight_kg: null,
-      };
-      to_result = P.afmFactorsTakeoff(afmTo, pa, oat, r.surface, r.slope, headwind, wet);
-      ld_result = P.afmFactorsLanding(afmLd, pa, oat, r.surface, r.slope, headwind, wet);
-      // afm functions don't return d_ppd/op_mult; fake them so the breakdown still renders
+      methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong> (${adata.source}).`;
+      const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+      const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+      to_result = P.afmFactorsTakeoff(afmTo, paTo, oat, rTo.surface, rTo.slope, toWind.headwind, toWet);
+      ld_result = P.afmFactorsLanding(afmLd, paLd, oat, rLd.surface, rLd.slope, ldWind.headwind, ldWet);
       if (to_result){ to_result.d_ppd = to_result.distance / (to_result.surf_factor * to_result.slope_factor * to_result.wind_factor * to_result.wet_factor); to_result.op_mult = to_result.surf_factor; }
       if (ld_result){ ld_result.d_ppd = ld_result.distance / (ld_result.surf_factor * ld_result.slope_factor * ld_result.wind_factor * ld_result.wet_factor); ld_result.op_mult = ld_result.surf_factor; }
     } else {
-      methodNote = `Method: <strong>none</strong>. Set a P-chart or POH data source in the aircraft config.`;
+      methodNote = `Method: <strong>none</strong>. Set a P-chart or Flight Manual data source in the aircraft config.`;
     }
 
     const host = document.getElementById('perf-results');
     if (activeMethod === 'none'){
       host.innerHTML =
         `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
-        `<div class="banner warn" style="margin:0">No performance data computed for this aircraft. Set a P-chart or POH data source in the aircraft configuration.</div>`;
+        `<div class="banner warn" style="margin:0">No performance data computed for this aircraft. Set a P-chart or Flight Manual data source in the aircraft configuration.</div>`;
       document.getElementById('perf-breakdown').innerHTML = '';
     } else {
       const stat = (label, distance, available, ok, sub) => {
@@ -1494,95 +1536,96 @@ const App = (function(){
           <div class="stat ${cls}" style="margin-bottom:8px">
             <div class="l">${label}</div>
             <div class="v">${distance.toFixed(0)} m</div>
-            <div class="s">${available > 0 ? (ok ? `✓ GO — ${margin.toFixed(0)}% margin on ${sub} (${available} m)` : `✗ NO-GO — exceeds ${sub} (${available} m) by ${(distance - available).toFixed(0)} m`) : `no ${sub} entered`}</div>
+            <div class="s">${available > 0 ? (ok ? `✓ GO \u2014 ${margin.toFixed(0)}% margin on ${sub} (${available} m)` : `✗ NO-GO \u2014 exceeds ${sub} (${available} m) by ${(distance - available).toFixed(0)} m`) : `no ${sub} entered`}</div>
           </div>`;
       };
-      const toOK = r.tora > 0 && to_result.distance <= r.tora;
-      const ldOK = r.lda > 0 && ld_result.distance <= r.lda;
+      const toOK = rTo.tora > 0 && to_result.distance <= rTo.tora;
+      const ldOK = rLd.lda > 0 && ld_result.distance <= rLd.lda;
 
-      // Wind out-of-chart warning (P-chart mode only)
       let windWarning = '';
       if (activeMethod === 'pchart' && pdata.wind_factor){
-        if (headwind < -pdata.wind_factor.max_tailwind_kt){
-          windWarning = `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Tailwind ${(-headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt — distances computed at chart maximum tailwind, actual distance likely worse.</div>`;
-        } else if (headwind > pdata.wind_factor.max_headwind_kt){
-          windWarning = `<div class="banner warn" style="margin:0 0 6px;font-size:12px">ℹ Headwind ${headwind.toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_headwind_kt} kt — distances computed at chart maximum headwind.</div>`;
-        }
+        if (toWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ T/O tailwind ${(-toWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
+        if (ldWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing tailwind ${(-ldWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
       }
 
       host.innerHTML =
         `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
         windWarning +
-        stat('T/O distance to 50\u2032 (max performance)', to_result.distance, r.tora, toOK, 'TORA') +
-        stat('Landing distance from 50\u2032 (full flap)', ld_result.distance, r.lda, ldOK, 'LDA');
+        stat(`T/O distance to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA') +
+        stat(`Landing distance from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA');
 
       const fmt2 = x => x.toFixed(3);
       document.getElementById('perf-breakdown').innerHTML = `
         <table style="width:100%;font-variant-numeric:tabular-nums;font-size:12px;border-collapse:collapse">
-          <tr><td colspan="3"><strong>Takeoff</strong></td></tr>
+          <tr><td colspan="3"><strong>Takeoff${rTo.ident ? ' \u2014 ' + rTo.ident : ''}</strong></td></tr>
           <tr><td>PPD reference</td><td colspan="2" style="text-align:right">${to_result.d_ppd.toFixed(0)} m</td></tr>
           <tr><td>× Operation</td><td style="text-align:right">${fmt2(to_result.op_mult)}</td><td style="text-align:right">${(to_result.d_ppd * to_result.op_mult).toFixed(0)} m</td></tr>
-          <tr><td>× Slope (${r.slope}%)</td><td style="text-align:right">${fmt2(to_result.slope_factor)}</td><td style="text-align:right">${(to_result.d_ppd * to_result.op_mult * to_result.slope_factor).toFixed(0)} m</td></tr>
-          <tr><td>× Wind (${headwind.toFixed(1)} kt)</td><td style="text-align:right">${fmt2(to_result.wind_factor)}</td><td style="text-align:right">${(to_result.d_ppd * to_result.op_mult * to_result.slope_factor * to_result.wind_factor).toFixed(0)} m</td></tr>
-          ${wet ? `<tr><td>× Wet</td><td style="text-align:right">${fmt2(to_result.wet_factor)}</td><td style="text-align:right">${to_result.distance.toFixed(0)} m</td></tr>` : ''}
-          <tr><td colspan="3" style="padding-top:8px"><strong>Landing</strong></td></tr>
+          <tr><td>× Slope (${rTo.slope}%)</td><td style="text-align:right">${fmt2(to_result.slope_factor)}</td><td style="text-align:right">${(to_result.d_ppd * to_result.op_mult * to_result.slope_factor).toFixed(0)} m</td></tr>
+          <tr><td>× Wind (${toWind.headwind.toFixed(1)} kt)</td><td style="text-align:right">${fmt2(to_result.wind_factor)}</td><td style="text-align:right">${(to_result.d_ppd * to_result.op_mult * to_result.slope_factor * to_result.wind_factor).toFixed(0)} m</td></tr>
+          ${toWet ? `<tr><td>× Wet</td><td style="text-align:right">${fmt2(to_result.wet_factor)}</td><td style="text-align:right">${to_result.distance.toFixed(0)} m</td></tr>` : ''}
+          <tr><td colspan="3" style="padding-top:8px"><strong>Landing${rLd.ident ? ' \u2014 ' + rLd.ident : ''}</strong></td></tr>
           <tr><td>PPD reference</td><td colspan="2" style="text-align:right">${ld_result.d_ppd.toFixed(0)} m</td></tr>
           <tr><td>× Operation</td><td style="text-align:right">${fmt2(ld_result.op_mult)}</td><td style="text-align:right">${(ld_result.d_ppd * ld_result.op_mult).toFixed(0)} m</td></tr>
-          <tr><td>× Slope (${r.slope}%)</td><td style="text-align:right">${fmt2(ld_result.slope_factor)}</td><td style="text-align:right">${(ld_result.d_ppd * ld_result.op_mult * ld_result.slope_factor).toFixed(0)} m</td></tr>
-          <tr><td>× Wind (${headwind.toFixed(1)} kt)</td><td style="text-align:right">${fmt2(ld_result.wind_factor)}</td><td style="text-align:right">${(ld_result.d_ppd * ld_result.op_mult * ld_result.slope_factor * ld_result.wind_factor).toFixed(0)} m</td></tr>
-          ${wet ? `<tr><td>× Wet</td><td style="text-align:right">${fmt2(ld_result.wet_factor)}</td><td style="text-align:right">${ld_result.distance.toFixed(0)} m</td></tr>` : ''}
+          <tr><td>× Slope (${rLd.slope}%)</td><td style="text-align:right">${fmt2(ld_result.slope_factor)}</td><td style="text-align:right">${(ld_result.d_ppd * ld_result.op_mult * ld_result.slope_factor).toFixed(0)} m</td></tr>
+          <tr><td>× Wind (${ldWind.headwind.toFixed(1)} kt)</td><td style="text-align:right">${fmt2(ld_result.wind_factor)}</td><td style="text-align:right">${(ld_result.d_ppd * ld_result.op_mult * ld_result.slope_factor * ld_result.wind_factor).toFixed(0)} m</td></tr>
+          ${ldWet ? `<tr><td>× Wet</td><td style="text-align:right">${fmt2(ld_result.wet_factor)}</td><td style="text-align:right">${ld_result.distance.toFixed(0)} m</td></tr>` : ''}
         </table>
       `;
     }
 
-    // Crosswind
-    const xwHost = document.getElementById('perf-crosswind');
+    // Crosswind — show one block with T/O and Landing rows
     const demoXW = ac.crosswind_demonstrated_kt;
     const clubXW = ac.crosswind_club_kt;
     const limit = (demoXW && clubXW) ? Math.min(demoXW, clubXW) : (demoXW || clubXW || null);
+    const xwHost = document.getElementById('perf-crosswind');
     let xwHtml = '';
-    if (perfInput.wind.mode !== 'dirspeed' || !perfInput.wind.speed){
-      xwHtml = `<div style="color:var(--muted);font-size:13px">Enter wind direction and speed to compute crosswind.</div>`;
-    } else {
-      const cls = (limit && crosswind > limit) ? 'bad' : 'ok';
-      const sub = limit ? `limit ${limit} kt ${demoXW && clubXW ? '(lower of demo ' + demoXW + ', club ' + clubXW + ')' : (demoXW ? '(demonstrated)' : '(club)')}` : 'no limit set in aircraft config — add via Edit aircraft';
-      xwHtml = `
-        <div class="stat ${cls}">
-          <div class="l">Crosswind component</div>
-          <div class="v">${crosswind.toFixed(1)} kt</div>
-          <div class="s">${limit && crosswind > limit ? '✗ exceeds ' + sub : (limit ? '✓ within ' + sub : sub)}</div>
-        </div>
-      `;
-    }
 
-    // Tailwind warning + better-runway suggestion
-    if (perfInput.wind.mode === 'dirspeed' && perfInput.wind.speed > 0 && headwind < 0){
-      // Component-mode case skipped; we only know headwind in dirspeed mode
+    const xwRow = (label, runway, w) => {
+      if (w.mode !== 'dirspeed' || !w.speed){
+        return `<div style="color:var(--muted);font-size:13px;padding:6px 0">${label}: enter direction and speed to compute.</div>`;
+      }
+      const cls = (limit && w.crosswind > limit) ? 'bad' : 'ok';
+      const sub = limit ? `limit ${limit} kt ${demoXW && clubXW ? '(lower of demo ' + demoXW + ', club ' + clubXW + ')' : (demoXW ? '(demonstrated)' : '(club)')}` : 'no limit set in aircraft config';
+      return `<div class="stat ${cls}" style="margin-bottom:6px">
+        <div class="l">${label}${runway.ident ? ' \u2014 ' + runway.ident : ''}</div>
+        <div class="v">${w.crosswind.toFixed(1)} kt</div>
+        <div class="s">${limit && w.crosswind > limit ? '✗ exceeds ' + sub : (limit ? '✓ within ' + sub : sub)}</div>
+      </div>`;
+    };
+    xwHtml += xwRow('T/O crosswind', rTo, toWind);
+    xwHtml += xwRow('Landing crosswind', rLd, ldWind);
+
+    // Tailwind + better-runway suggestions for each side
+    const tailwindBlock = (label, runway, w, selId) => {
+      if (w.mode !== 'dirspeed' || !w.speed || w.headwind >= 0) return '';
       let suggestion = '';
-      if (r.ident){
-        // Sibling runways: same ICAO prefix (4 chars), different direction
-        const prefix = r.ident.split(/\s+/)[0];
-        const siblings = runways.filter(rw => rw.ident && rw.ident.startsWith(prefix) && rw.id !== selectedRunwayId);
+      if (runway.ident){
+        const prefix = runway.ident.split(/\s+/)[0];
+        const siblings = runways.filter(rw => rw.ident && rw.ident.startsWith(prefix) && rw.id !== selId);
         let best = null;
         siblings.forEach(rw => {
-          const wc = window.Performance.windComponents(rw.heading, perfInput.wind.dir, perfInput.wind.speed);
+          const wc = window.Performance.windComponents(rw.heading, perfInput[w === toWind ? 'to_wind' : 'ld_wind'].dir, perfInput[w === toWind ? 'to_wind' : 'ld_wind'].speed);
           if (!best || wc.headwind > best.hw){ best = { rw, hw: wc.headwind, xw: wc.crosswind }; }
         });
-        if (best && best.hw > headwind){
+        if (best && best.hw > w.headwind){
           suggestion = `<div style="margin-top:6px;font-size:12px">→ Better option: <strong>${best.rw.ident}</strong> would give HW ${best.hw.toFixed(1)} kt / XW ${best.xw.toFixed(1)} kt</div>`;
         }
       }
-      xwHtml += `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ Tailwind ${(-headwind).toFixed(1)} kt on this runway. ${suggestion ? '' : 'Check the reciprocal direction.'}${suggestion}</div>`;
-    }
+      return `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ ${label}: Tailwind ${(-w.headwind).toFixed(1)} kt on this runway.${suggestion}</div>`;
+    };
+    xwHtml += tailwindBlock('T/O', rTo, toWind, _selId('to'));
+    xwHtml += tailwindBlock('Landing', rLd, ldWind, _selId('ld'));
 
-    // Group sanity check
-    if (ac.group != null && r.group != null){
-      if (ac.group > r.group){
-        xwHtml += `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ Aircraft Group ${ac.group} exceeds aerodrome Group ${r.group}. Sanity check only — verify with operator / AIP.</div>`;
-      } else {
-        xwHtml += `<div class="banner ok" style="margin-top:8px;font-size:12px">✓ Aircraft Group ${ac.group} is compatible with aerodrome Group ${r.group}.</div>`;
+    // Group sanity checks (one per side)
+    const groupBlock = (label, runway) => {
+      if (ac.group == null || runway.group == null) return '';
+      if (ac.group > runway.group){
+        return `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ ${label}: Aircraft Group ${ac.group} exceeds aerodrome Group ${runway.group}. Sanity check only \u2014 verify with operator / AIP.</div>`;
       }
-    }
+      return `<div class="banner ok" style="margin-top:8px;font-size:12px">✓ ${label}: Aircraft Group ${ac.group} is compatible with aerodrome Group ${runway.group}.</div>`;
+    };
+    xwHtml += groupBlock('T/O', rTo);
+    xwHtml += groupBlock('Landing', rLd);
 
     xwHost.innerHTML = xwHtml;
   }
@@ -1593,35 +1636,32 @@ const App = (function(){
     computeAndRenderPerf();
   }
 
-  function loadSavedRunway(id){
-    if (!id){
-      selectedRunwayId = null;
-      saveSelectedRunway();
+  function loadSavedRunway(side, id){
+    if (!side){ // legacy single-arg form ignored
       return;
     }
+    if (!id){ _setSelId(side, null); renderPerformance(); return; }
     const rw = runways.find(x => x.id === id);
     if (!rw) return;
-    selectedRunwayId = id;
-    saveSelectedRunway();
-    perfInput.runway = {
+    _setSelId(side, id);
+    const key = side === 'ld' ? 'ld_runway' : 'to_runway';
+    perfInput[key] = {
+      id: rw.id,
       ident: rw.ident || '', heading: rw.heading ?? 0, elev: rw.elev ?? 0, slope: rw.slope ?? 0,
-      tora: rw.tora ?? 0, lda: rw.lda ?? 0, surface: rw.surface || 'paved',
-      condition: perfInput.runway.condition,  // keep current condition (dry/wet) since it's per-flight
-      group: rw.group ?? null,
+      tora: rw.tora ?? 0, lda: rw.lda ?? 0, surface: rw.surface || 'paved', group: rw.group ?? null,
     };
     renderPerformance();
   }
 
-  // --- Runway editor (modal) ---
   function runwayConfigForm(rw){
     return `
       <div class="row">
-        <div style="flex:2"><label>Designator</label><input type="text" id="rcfg-ident" value="${rw.ident||''}" placeholder="e.g. NZWN 16"><small class="help">ICAO + direction, e.g. NZWN 16</small></div>
-        <div><label>Heading (°M)</label><input type="number" inputmode="decimal" id="rcfg-hdg" min="0" max="360" step="1" value="${rw.heading ?? ''}" placeholder="160"><small class="help">degrees magnetic</small></div>
+        <div style="flex:2"><label>Designator</label><input type="text" id="rcfg-ident" value="${rw.ident||''}" placeholder="e.g. NZWN 16"><small class="help">ICAO + direction</small></div>
+        <div><label>Heading (°M)</label><input type="number" inputmode="decimal" id="rcfg-hdg" min="0" max="360" step="1" value="${rw.heading ?? ''}" placeholder="160"></div>
       </div>
       <div class="row">
-        <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rcfg-elev" step="1" value="${rw.elev ?? ''}" placeholder="41"><small class="help">aerodrome elevation</small></div>
-        <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rcfg-slope" step="0.1" value="${rw.slope ?? ''}" placeholder="-0.7"><small class="help">+ uphill, − downhill (T/O direction)</small></div>
+        <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rcfg-elev" step="1" value="${rw.elev ?? ''}" placeholder="41"></div>
+        <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rcfg-slope" step="0.1" value="${rw.slope ?? ''}" placeholder="-0.7"><small class="help">+ uphill, − downhill (T/O dir)</small></div>
       </div>
       <div class="row">
         <div><label>TORA (m)</label><input type="number" inputmode="decimal" id="rcfg-tora" step="1" value="${rw.tora ?? ''}" placeholder="1936"></div>
@@ -1648,19 +1688,19 @@ const App = (function(){
     `;
   }
 
-  function openRunwayConfig(forNew, runwayIdOverride){
-    editingRunwayId = forNew ? null : (runwayIdOverride || selectedRunwayId);
+  let _editingSide = null;
+  function openRunwayConfig(side, forNew, runwayIdOverride){
+    _editingSide = side || 'to';
+    editingRunwayId = forNew ? null : (runwayIdOverride || _selId(_editingSide));
     const rw = editingRunwayId ? runways.find(x => x.id === editingRunwayId) : null;
     const blank = { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
-    const data = rw || blank;
     document.getElementById('rwy-config-title').textContent = editingRunwayId ? 'Edit runway' : 'Add new runway';
-    document.getElementById('rwy-config-body').innerHTML = runwayConfigForm(data);
+    document.getElementById('rwy-config-body').innerHTML = runwayConfigForm(rw || blank);
     document.getElementById('btn-rwy-save-copy').style.display = editingRunwayId ? '' : 'none';
     document.getElementById('btn-delete-rwy').style.display = editingRunwayId ? '' : 'none';
     document.getElementById('rwy-config-modal').classList.remove('hidden');
   }
   function closeRunwayConfig(){ document.getElementById('rwy-config-modal').classList.add('hidden'); }
-
   function readRunwayForm(){
     const grpV = document.getElementById('rcfg-group').value;
     return {
@@ -1674,86 +1714,95 @@ const App = (function(){
       group: grpV === '' ? null : parseInt(grpV, 10),
     };
   }
-
+  function _applyRunwayToSide(side, rw){
+    const key = side === 'ld' ? 'ld_runway' : 'to_runway';
+    perfInput[key] = { id: rw.id, ident: rw.ident, heading: rw.heading, elev: rw.elev, slope: rw.slope, tora: rw.tora, lda: rw.lda, surface: rw.surface, group: rw.group };
+  }
   function saveRunwayConfig(){
     const data = readRunwayForm();
     if (!data.ident){ alert('Designator is required.'); return; }
+    const side = _editingSide || 'to';
+    let rwId;
     if (editingRunwayId){
       const rw = runways.find(x => x.id === editingRunwayId);
-      if (rw){ Object.assign(rw, data); }
+      if (rw) Object.assign(rw, data);
+      rwId = editingRunwayId;
     } else {
       const newRw = { id: 'rwy-' + Math.random().toString(36).slice(2, 9), ...data };
       runways.push(newRw);
-      selectedRunwayId = newRw.id;
-      saveSelectedRunway();
+      rwId = newRw.id;
+      _setSelId(side, rwId);
     }
     saveRunways();
     closeRunwayConfig();
-    // If the user just edited the currently-selected runway, refresh the form values too
-    if (selectedRunwayId){
-      const sel = runways.find(x => x.id === selectedRunwayId);
-      if (sel){
-        perfInput.runway = { ...perfInput.runway, ident: sel.ident, heading: sel.heading, elev: sel.elev, slope: sel.slope, tora: sel.tora, lda: sel.lda, surface: sel.surface, group: sel.group };
+    // Refresh perfInput for whichever side(s) reference this runway
+    ['to','ld'].forEach(s => {
+      if (_selId(s) === rwId){
+        const rw = runways.find(x => x.id === rwId);
+        if (rw) _applyRunwayToSide(s, rw);
       }
-    }
+    });
     renderPerformance();
   }
   function saveRunwayConfigAsCopy(){
     const data = readRunwayForm();
     if (!data.ident){ alert('Designator is required.'); return; }
+    const side = _editingSide || 'to';
     const newRw = { id: 'rwy-' + Math.random().toString(36).slice(2, 9), ...data };
     runways.push(newRw);
-    selectedRunwayId = newRw.id;
-    saveSelectedRunway();
+    _setSelId(side, newRw.id);
+    _applyRunwayToSide(side, newRw);
     saveRunways();
     closeRunwayConfig();
-    const sel = runways.find(x => x.id === selectedRunwayId);
-    if (sel){
-      perfInput.runway = { ...perfInput.runway, ident: sel.ident, heading: sel.heading, elev: sel.elev, slope: sel.slope, tora: sel.tora, lda: sel.lda, surface: sel.surface, group: sel.group };
-    }
     renderPerformance();
   }
   function deleteRunway(){
     if (!editingRunwayId) return;
     if (!confirm('Delete this runway? This cannot be undone.')) return;
-    runways = runways.filter(x => x.id !== editingRunwayId);
-    if (selectedRunwayId === editingRunwayId){
-      selectedRunwayId = null;
-      saveSelectedRunway();
-      perfInput.runway = { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: perfInput.runway.condition, group: null };
-    }
+    const delId = editingRunwayId;
+    runways = runways.filter(x => x.id !== delId);
+    ['to','ld'].forEach(s => {
+      if (_selId(s) === delId){
+        _setSelId(s, null);
+        const key = s === 'ld' ? 'ld_runway' : 'to_runway';
+        perfInput[key] = { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
+      }
+    });
     saveRunways();
     closeRunwayConfig();
     renderPerformance();
   }
 
-  function newRunway(){ openRunwayConfig(true); }
-  function editCurrentRunway(){
-    if (!selectedRunwayId){ alert('No runway selected. Pick one from the dropdown first, or use "Add new runway".'); return; }
-    openRunwayConfig(false);
+  function newRunway(side){ openRunwayConfig(side || 'to', true); }
+  function editCurrentRunway(side){
+    if (!_selId(side || 'to')){ alert('No runway selected. Pick one from the dropdown first, or use "Add new runway".'); return; }
+    openRunwayConfig(side || 'to', false);
   }
-  function duplicateCurrentRunway(){
-    if (!selectedRunwayId){ alert('No runway selected to duplicate.'); return; }
-    const orig = runways.find(x => x.id === selectedRunwayId);
+  function duplicateCurrentRunway(side){
+    const sd = side || 'to';
+    if (!_selId(sd)){ alert('No runway selected to duplicate.'); return; }
+    const orig = runways.find(x => x.id === _selId(sd));
     if (!orig) return;
     const copy = { ...orig, id: 'rwy-' + Math.random().toString(36).slice(2, 9), ident: (orig.ident || '') + ' (copy)' };
     runways.push(copy);
-    selectedRunwayId = copy.id;
+    _setSelId(sd, copy.id);
+    _applyRunwayToSide(sd, copy);
     saveRunways();
-    saveSelectedRunway();
-    openRunwayConfig(false);
+    openRunwayConfig(sd, false);
   }
 
-  // Runway cog menu (mirrors aircraft menu)
-  function toggleRwyMenu(event){
+  function toggleRwyMenu(side, event){
     if (event) event.stopPropagation();
-    const m = document.getElementById('rwy-menu');
+    const sd = side || 'to';
+    const menuId = sd === 'ld' ? 'ld-rwy-menu' : 'to-rwy-menu';
+    const btnId = sd === 'ld' ? 'ld-rwy-menu-btn' : 'to-rwy-menu-btn';
+    const m = document.getElementById(menuId);
     if (!m) return;
     m.classList.toggle('hidden');
     if (!m.classList.contains('hidden')){
       setTimeout(() => {
         const handler = (ev) => {
-          if (!m.contains(ev.target) && ev.target.id !== 'rwy-menu-btn'){
+          if (!m.contains(ev.target) && ev.target.id !== btnId){
             m.classList.add('hidden');
             document.removeEventListener('click', handler);
           }
@@ -1762,7 +1811,11 @@ const App = (function(){
       }, 0);
     }
   }
-  function closeRwyMenu(){ const m = document.getElementById('rwy-menu'); if (m) m.classList.add('hidden'); }
+  function closeRwyMenu(side){
+    const sd = side || 'to';
+    const m = document.getElementById(sd === 'ld' ? 'ld-rwy-menu' : 'to-rwy-menu');
+    if (m) m.classList.add('hidden');
+  }
 
   function openManageRunways(){
     renderManageRunwaysList();
@@ -1792,12 +1845,13 @@ const App = (function(){
     `).join('');
   }
   function manageRunwaySelect(id){
-    loadSavedRunway(id);
+    // Default to T/O side; user can also pick from per-side dropdown directly
+    loadSavedRunway('to', id);
     closeManageRunways();
   }
   function manageRunwayEdit(id){
     closeManageRunways();
-    openRunwayConfig(false, id);
+    openRunwayConfig('to', false, id);
   }
   function manageRunwayDuplicate(id){
     const orig = runways.find(x => x.id === id);
@@ -1813,12 +1867,14 @@ const App = (function(){
     if (!rw) return;
     if (!confirm(`Delete runway "${rw.ident || '(no ident)'}"?`)) return;
     runways = runways.filter(x => x.id !== id);
-    if (selectedRunwayId === id){
-      selectedRunwayId = null;
-      saveSelectedRunway();
-      perfInput.runway = { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: perfInput.runway.condition, group: null };
-      if (mode === 'performance') renderPerformance();
-    }
+    ['to','ld'].forEach(sd => {
+      if (_selId(sd) === id){
+        _setSelId(sd, null);
+        const key = sd === 'ld' ? 'ld_runway' : 'to_runway';
+        perfInput[key] = { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
+      }
+    });
+    if (mode === 'performance') renderPerformance();
     saveRunways();
     renderManageRunwaysList();
     renderSavedRunwaysPicker();
@@ -1880,9 +1936,10 @@ const App = (function(){
     if (!confirm('Replace all your saved runways with the defaults? Your current runway data will be lost.')) return;
     // No default runway dataset yet; clear the list.
     runways = [];
-    selectedRunwayId = null;
-    saveRunways(); saveSelectedRunway(); closeMenu();
-    perfInput.runway = { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', condition: perfInput.runway.condition, group: null };
+    selectedToRunwayId = null; selectedLdRunwayId = null;
+    saveRunways(); saveSelectedToRunway(); saveSelectedLdRunway(); closeMenu();
+    perfInput.to_runway = { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
+    perfInput.ld_runway = { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
     if (mode === 'performance') renderPerformance();
     alert('Saved runways cleared. (No default runway dataset is bundled yet.)');
   }
@@ -1976,7 +2033,7 @@ const App = (function(){
             ${Object.keys(window.PCHART_DATA||{}).map(k => { const d = window.PCHART_DATA[k]; return `<option value="${k}" ${a.pchart_id===k?'selected':''}>${k} — ${d.name||''}</option>`; }).join('')}
           </select>
         </div>
-        <div><label>POH (AFM) data</label>
+        <div><label>Flight Manual data</label>
           <select id="cfg-afm">
             <option value="">— none —</option>
             ${Object.keys(window.AFM_DATA||{}).map(k => { const d = window.AFM_DATA[k]; return `<option value="${k}" ${a.afm_id===k?'selected':''}>${k} — ${d.name||''}</option>`; }).join('')}
@@ -1984,9 +2041,9 @@ const App = (function(){
         </div>
       </div>
       <div id="cfg-perf-info" style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:8px"></div>
-      <small class="help" style="margin-bottom:8px">P-chart includes CASO 4 factors. POH (AFM) uses raw POH numbers + AC91-3 factors applied by the app. When both are set, you can switch on the Performance tab.</small>
+      <small class="help" style="margin-bottom:8px">P-chart includes CASO 4 factors. Flight Manual uses raw distances + AC91-3 factors applied by the app. When both are set, you can switch on the Performance tab.</small>
       <div class="row">
-        <div><label>Demonstrated crosswind (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-demo" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="from POH"></div>
+        <div><label>Demonstrated crosswind (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-demo" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="from Flight Manual"></div>
         <div><label>Club crosswind limit (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-club" value="${a.crosswind_club_kt ?? ''}" placeholder="if lower than demo"></div>
       </div>
       <div class="row">
@@ -2070,7 +2127,7 @@ const App = (function(){
       }
       if (aid && window.AFM_DATA?.[aid]){
         const d = window.AFM_DATA[aid];
-        lines.push(`✓ POH (AFM): <strong>${d.name||aid}</strong>${d.source ? ' — '+d.source : ''}`);
+        lines.push(`✓ Flight Manual: <strong>${d.name||aid}</strong>${d.source ? ' — '+d.source : ''}`);
       }
       if (lines.length === 0) lines.push('No performance data selected.');
       const host = document.getElementById('cfg-perf-info');
@@ -2290,7 +2347,7 @@ const App = (function(){
       items: fleet.map(a => ({
         value: a.id, checked: true,
         label: `${a.reg || '(no reg)'} — ${a.type || ''}`,
-        detail: `Empty ${a.empty_weight} ${u(a).w} · MTOW ${a.mtow}${a.pchart_id ? ' · P-chart' : ''}${a.afm_id ? ' · POH' : ''}`,
+        detail: `Empty ${a.empty_weight} ${u(a).w} · MTOW ${a.mtow}${a.pchart_id ? ' · P-chart' : ''}${a.afm_id ? ' · FM' : ''}`,
       })),
       onConfirm: (ids) => {
         if (ids.length === 0) return;
@@ -2322,7 +2379,7 @@ const App = (function(){
             return {
               value: a, checked: true,
               label: `${a.reg || '(no reg)'} — ${a.type || ''}${exists ? ' ⚠ replaces existing' : ''}`,
-              detail: `Empty ${a.empty_weight || '?'} · MTOW ${a.mtow || '?'}${a.pchart_id ? ' · P-chart' : ''}${a.afm_id ? ' · POH' : ''}`,
+              detail: `Empty ${a.empty_weight || '?'} · MTOW ${a.mtow || '?'}${a.pchart_id ? ' · P-chart' : ''}${a.afm_id ? ' · FM' : ''}`,
             };
           }),
           onConfirm: (chosen) => {
@@ -2402,7 +2459,6 @@ const App = (function(){
     addStation, removeStation, addEnvPoint, removeEnvPoint,
     exportData, importData, restoreDefaults, closeMenu,
     saveScenario, loadScenario, deleteScenario,
-    addLeg, removeLeg,
     printSheet,
     setWindMode, setPerfMethod, loadSavedRunway,
     newRunway, editCurrentRunway, duplicateCurrentRunway,

@@ -134,6 +134,8 @@
     details, details > div, details > * { display: block !important; }
     details summary { display: none !important; }
     .card { border: 1px solid #999 !important; background: #fff !important; color: #000 !important; box-shadow: none !important; page-break-inside: avoid; margin-bottom: 10px !important; padding: 10px 12px !important; border-radius: 4px !important; }
+    /* W&B results + envelope always print, even if currently hidden by Performance mode */
+    #results-card, #envelope-card { display: block !important; }
     .card h2 { color: #000 !important; font-size: 10pt !important; margin-bottom: 8px !important; }
     .stat { background: #f4f4f4 !important; color: #000 !important; padding: 8px 10px !important; }
     .stat .l, .stat .v, .stat .s { color: #000 !important; }
@@ -191,7 +193,6 @@
   <div id="calculator" class="hidden">
     <div class="tab-bar">
       <button data-mode="forward" class="active" onclick="App.setMode('forward')">Plan flight</button>
-      <button data-mode="multileg" onclick="App.setMode('multileg')">Multi-leg</button>
       <button data-mode="performance" onclick="App.setMode('performance')">Performance</button>
     </div>
 
@@ -216,19 +217,6 @@
     <div class="print-only" id="print-banner"></div>
     <div class="print-only" id="print-loading" style="font-size:10pt;margin-bottom:10px"></div>
 
-    <div class="print-only" id="print-perf-section" style="page-break-before:always;display:none">
-      <div class="print-header" style="margin-bottom:12px">
-        <div><h1 id="print-perf-title" style="margin:0">Performance sheet</h1><div id="print-perf-acline" style="font-size:10pt;margin-top:2px"></div></div>
-        <div class="meta">
-          Date: ____________________<br>
-          PIC: ____________________<br>
-          Generated: <span id="print-perf-when"></span>
-        </div>
-      </div>
-      <div id="print-perf-banner" style="padding:8px 10px;border:1px solid #999;border-radius:4px;margin-bottom:10px;font-size:10pt"></div>
-      <div id="print-perf-body" style="font-size:10pt"></div>
-    </div>
-
     <div id="banner-host"></div>
 
     <div class="card" id="stations-card">
@@ -243,46 +231,79 @@
 
     <div id="perf-cards" class="hidden">
       <div class="card">
-        <h2>Runway <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
+        <h2>Takeoff runway <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-          <select id="saved-rwy-select" onchange="App.loadSavedRunway(this.value)" style="flex:1"><option value="">— select a runway —</option></select>
-          <button class="icon-btn" id="rwy-menu-btn" onclick="App.toggleRwyMenu(event)" title="Runway options" aria-label="Runway options">⚙</button>
+          <select id="saved-to-rwy-select" onchange="App.loadSavedRunway('to', this.value)" style="flex:1"><option value="">— select a runway —</option></select>
+          <button class="icon-btn" id="to-rwy-menu-btn" onclick="App.toggleRwyMenu('to', event)" title="Runway options" aria-label="Runway options">⚙</button>
         </div>
-        <div id="rwy-menu" class="ac-menu hidden" style="margin-top:-6px;margin-bottom:8px">
-          <button onclick="App.editCurrentRunway(); App.closeRwyMenu();">Edit current runway…</button>
-          <button onclick="App.duplicateCurrentRunway(); App.closeRwyMenu();">Duplicate current runway…</button>
-          <button onclick="App.newRunway(); App.closeRwyMenu();">Add new runway…</button>
-          <button onclick="App.openManageRunways(); App.closeRwyMenu();">Manage all runways…</button>
+        <div id="to-rwy-menu" class="ac-menu hidden" style="margin-top:-6px;margin-bottom:8px">
+          <button onclick="App.editCurrentRunway('to'); App.closeRwyMenu('to');">Edit this runway…</button>
+          <button onclick="App.duplicateCurrentRunway('to'); App.closeRwyMenu('to');">Duplicate this runway…</button>
+          <button onclick="App.newRunway('to'); App.closeRwyMenu('to');">Add new runway…</button>
+          <button onclick="App.openManageRunways(); App.closeRwyMenu('to');">Manage all runways…</button>
         </div>
-        <div id="rwy-summary" style="font-size:12px;color:var(--muted);line-height:1.6;padding:8px;background:var(--panel-2);border-radius:6px;margin-bottom:8px"></div>
+        <div id="to-rwy-summary" style="font-size:12px;color:var(--muted);line-height:1.6;padding:8px;background:var(--panel-2);border-radius:6px;margin-bottom:8px"></div>
         <div class="row">
-          <div><label>Condition (this flight)</label>
-            <select id="rwy-condition">
+          <div><label>Condition</label>
+            <select id="to-condition">
+              <option value="dry">Dry</option>
+              <option value="wet">Wet</option>
+              <option value="long_grass">Long grass</option>
+            </select>
+          </div>
+          <div></div>
+        </div>
+        <hr style="margin:10px 0">
+        <label>Wind at takeoff</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <button class="btn secondary" data-wind-side="to" data-wind-mode="dirspeed" style="flex:1;padding:8px;font-size:13px" onclick="App.setWindMode('to','dirspeed')">Direction &amp; speed</button>
+          <button class="btn secondary" data-wind-side="to" data-wind-mode="component" style="flex:1;padding:8px;font-size:13px" onclick="App.setWindMode('to','component')">HW component</button>
+        </div>
+        <div id="to-wind-inputs"></div>
+        <div id="to-wind-components" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>
+      </div>
+
+      <div class="card">
+        <h2>Landing runway <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <select id="saved-ld-rwy-select" onchange="App.loadSavedRunway('ld', this.value)" style="flex:1"><option value="">— select a runway —</option></select>
+          <button class="icon-btn" id="ld-rwy-menu-btn" onclick="App.toggleRwyMenu('ld', event)" title="Runway options" aria-label="Runway options">⚙</button>
+        </div>
+        <div id="ld-rwy-menu" class="ac-menu hidden" style="margin-top:-6px;margin-bottom:8px">
+          <button onclick="App.editCurrentRunway('ld'); App.closeRwyMenu('ld');">Edit this runway…</button>
+          <button onclick="App.duplicateCurrentRunway('ld'); App.closeRwyMenu('ld');">Duplicate this runway…</button>
+          <button onclick="App.newRunway('ld'); App.closeRwyMenu('ld');">Add new runway…</button>
+          <button onclick="App.openManageRunways(); App.closeRwyMenu('ld');">Manage all runways…</button>
+        </div>
+        <div id="ld-rwy-summary" style="font-size:12px;color:var(--muted);line-height:1.6;padding:8px;background:var(--panel-2);border-radius:6px;margin-bottom:8px"></div>
+        <div class="row">
+          <div><label>Condition</label>
+            <select id="ld-condition">
               <option value="dry">Dry</option>
               <option value="wet">Wet (+15% landing)</option>
               <option value="long_grass">Long grass (treat as wet)</option>
             </select>
-            <small class="help">per-flight; not stored with runway</small>
           </div>
           <div></div>
         </div>
+        <hr style="margin:10px 0">
+        <label>Wind at landing</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <button class="btn secondary" data-wind-side="ld" data-wind-mode="dirspeed" style="flex:1;padding:8px;font-size:13px" onclick="App.setWindMode('ld','dirspeed')">Direction &amp; speed</button>
+          <button class="btn secondary" data-wind-side="ld" data-wind-mode="component" style="flex:1;padding:8px;font-size:13px" onclick="App.setWindMode('ld','component')">HW component</button>
+        </div>
+        <div id="ld-wind-inputs"></div>
+        <div id="ld-wind-components" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>
       </div>
 
       <div class="card">
-        <h2>Conditions</h2>
+        <h2>Atmospheric conditions</h2>
         <div class="row">
           <div><label>OAT (°C)</label><input type="number" inputmode="decimal" id="cond-oat" step="1" placeholder="15"></div>
           <div><label>QNH (hPa)</label><input type="number" inputmode="decimal" id="cond-qnh" step="1" value="1013"></div>
         </div>
-        <div id="atmospheric-info" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>
-        <hr style="margin:10px 0">
-        <label>Wind</label>
-        <div style="display:flex;gap:6px;margin-bottom:6px">
-          <button class="btn secondary" data-wind-mode="dirspeed" id="wind-mode-ds" style="flex:1;padding:8px;font-size:13px" onclick="App.setWindMode('dirspeed')">Direction &amp; speed</button>
-          <button class="btn secondary" data-wind-mode="component" id="wind-mode-cp" style="flex:1;padding:8px;font-size:13px" onclick="App.setWindMode('component')">HW component</button>
-        </div>
-        <div id="wind-inputs"></div>
-        <div id="wind-components" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>
+        <small class="help">applied to both takeoff and landing calculations</small>
+        <div id="atmospheric-info" style="font-size:11px;color:var(--muted);margin-top:6px;font-variant-numeric:tabular-nums"></div>
       </div>
 
       <div class="card" id="perf-op-card">
@@ -311,7 +332,7 @@
           <label>Calculation method</label>
           <div style="display:flex;gap:6px">
             <button class="btn secondary" data-method="pchart" id="method-pchart" style="flex:1;padding:8px;font-size:13px" onclick="App.setPerfMethod('pchart')">P-chart</button>
-            <button class="btn secondary" data-method="afm" id="method-afm" style="flex:1;padding:8px;font-size:13px" onclick="App.setPerfMethod('afm')">POH + AC91-3</button>
+            <button class="btn secondary" data-method="afm" id="method-afm" style="flex:1;padding:8px;font-size:13px" onclick="App.setPerfMethod('afm')">Flight Manual + AC91-3</button>
           </div>
         </div>
         <div id="perf-results"></div>
@@ -339,6 +360,19 @@
       <h2>CG envelope</h2>
       <div class="chart-wrap"><canvas id="env-chart"></canvas></div>
       <div class="chart-caption" id="chart-caption">green = takeoff · amber = landing · dashed line = fuel burn track</div>
+    </div>
+
+    <div class="print-only" id="print-perf-section" style="page-break-before:always;display:none">
+      <div class="print-header" style="margin-bottom:12px">
+        <div><h1 id="print-perf-title" style="margin:0">Performance sheet</h1><div id="print-perf-acline" style="font-size:10pt;margin-top:2px"></div></div>
+        <div class="meta">
+          Date: ____________________<br>
+          PIC: ____________________<br>
+          Generated: <span id="print-perf-when"></span>
+        </div>
+      </div>
+      <div id="print-perf-banner" style="padding:8px 10px;border:1px solid #999;border-radius:4px;margin-bottom:10px;font-size:10pt"></div>
+      <div id="print-perf-body" style="font-size:10pt"></div>
     </div>
   </div>
 </main>
