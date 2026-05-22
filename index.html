@@ -133,9 +133,16 @@
     }
     details, details > div, details > * { display: block !important; }
     details summary { display: none !important; }
-    .card { border: 1px solid #999 !important; background: #fff !important; color: #000 !important; box-shadow: none !important; page-break-inside: avoid; margin-bottom: 10px !important; padding: 10px 12px !important; border-radius: 4px !important; }
-    /* W&B results + envelope always print, even if currently hidden by Performance mode */
-    #results-card, #envelope-card { display: block !important; }
+    details, #breakdown-card details { background: transparent !important; border: none !important; }
+    .card { border: 1px solid #999 !important; background: #fff !important; color: #000 !important; box-shadow: none !important; margin-bottom: 10px !important; padding: 10px 12px !important; border-radius: 4px !important; }
+    main { display: flex !important; flex-direction: column !important; }
+    #results-card { order: 1; page-break-inside: avoid; }
+    #envelope-card { order: 2; page-break-inside: avoid; }
+    #breakdown-card { order: 3; page-break-inside: auto; }
+    #print-perf-section { order: 4; }
+    #results-card, #envelope-card, #breakdown-card { display: block !important; }
+    [data-print-hide="1"] { display: none !important; }
+    #envelope-card .chart-wrap { height: 280px !important; }
     .card h2 { color: #000 !important; font-size: 10pt !important; margin-bottom: 8px !important; }
     .stat { background: #f4f4f4 !important; color: #000 !important; padding: 8px 10px !important; }
     .stat .l, .stat .v, .stat .s { color: #000 !important; }
@@ -357,16 +364,20 @@
     <div class="card" id="results-card">
       <h2>Results</h2>
       <div class="stat-grid" id="results"></div>
-      <details open id="breakdown-details">
-        <summary>Show calculation breakdown</summary>
-        <div id="breakdown"></div>
-      </details>
     </div>
 
     <div class="card" id="envelope-card">
       <h2>CG envelope</h2>
       <div class="chart-wrap"><canvas id="env-chart"></canvas></div>
       <div class="chart-caption" id="chart-caption">green = takeoff · amber = landing · dashed line = fuel burn track</div>
+    </div>
+
+    <div class="card" id="breakdown-card">
+      <h2>Calculation breakdown</h2>
+      <details open id="breakdown-details">
+        <summary>Show calculation breakdown</summary>
+        <div id="breakdown"></div>
+      </details>
     </div>
 
     <div class="print-only" id="print-perf-section" style="page-break-before:always;display:none">

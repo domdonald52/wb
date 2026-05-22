@@ -146,7 +146,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v33';
+  const APP_VERSION = 'wb-v34';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1168,11 +1168,76 @@ const App = (function(){
   function printSheet(){
     const ac = fleet.find(a => a.id === selectedId);
     if (!ac){ alert('Select an aircraft first.'); return; }
-    document.getElementById('print-title').textContent = 'Weight & Balance sheet';
+
+    // Determine availability
+    const wbReady = ac.stations && ac.stations.length > 0;
+    const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
+    const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
+    const hasPerfData = !!(pdata || adata);
+    const rTo = perfInput.to_runway, rLd = perfInput.ld_runway;
+    const hasRunway = (rTo.ident || rTo.tora > 0 || rTo.lda > 0) || (rLd.ident || rLd.tora > 0 || rLd.lda > 0);
+    const perfReady = hasPerfData && hasRunway;
+
+    if (!wbReady && !perfReady){
+      alert('Nothing to print: no W&B and no performance data configured.');
+      return;
+    }
+
+    // Build picker items
+    openPicker({
+      title: 'Print',
+      subtitle: 'Choose which sheets to include.',
+      confirmLabel: 'Print',
+      items: [
+        { value: 'wb', checked: wbReady, label: 'W&B sheet (loading, results, CG envelope)', detail: wbReady ? '' : 'unavailable' },
+        { value: 'perf', checked: perfReady, label: 'Performance sheet (runway, distances, breakdown)', detail: perfReady ? '' : (!hasPerfData ? 'no P-chart or Flight Manual data configured for this aircraft' : 'no runway selected') },
+      ].filter(it => wbReady || it.value !== 'wb').filter(it => perfReady || it.value !== 'perf'), // hide unavailable
+      onConfirm: (chosen) => {
+        if (chosen.length === 0) return;
+        _doPrint(ac, chosen.includes('wb'), chosen.includes('perf'));
+      },
+    });
+  }
+
+  function _doPrint(ac, includeWb, includePerf){
     document.getElementById('print-acline').textContent = `${ac.reg} — ${ac.type}`;
     document.getElementById('print-when').textContent = new Date().toLocaleString();
 
-    // --- Always build the W&B section ---
+    // Show/hide W&B sections
+    const wbHeader = document.querySelector('.print-header');
+    const wbBanner = document.getElementById('print-banner');
+    const wbLoading = document.getElementById('print-loading');
+    const resultsCard = document.getElementById('results-card');
+    const envelopeCard = document.getElementById('envelope-card');
+    const breakdownCard = document.getElementById('breakdown-card');
+
+    const setHide = (el, hidden) => { if (el) el.dataset.printHide = hidden ? '1' : '0'; };
+    setHide(wbHeader, !includeWb);
+    setHide(wbBanner, !includeWb);
+    setHide(wbLoading, !includeWb);
+    setHide(resultsCard, !includeWb);
+    setHide(envelopeCard, !includeWb);
+    setHide(breakdownCard, !includeWb);
+
+    if (includeWb){
+      document.getElementById('print-title').textContent = 'Weight & Balance sheet';
+      _buildWbPrint(ac);
+    }
+
+    // Performance section
+    const perfSection = document.getElementById('print-perf-section');
+    if (includePerf){
+      perfSection.style.display = '';
+      // If only printing perf (no W&B), drop the page-break-before so it starts on page 1
+      perfSection.style.pageBreakBefore = includeWb ? 'always' : 'auto';
+      buildPerfPrint(ac);
+    } else {
+      perfSection.style.display = 'none';
+    }
+    setTimeout(() => window.print(), 100);
+  }
+
+  function _buildWbPrint(ac){
     const sv = stationValues[ac.id] || {};
     const fc = fuelInput[ac.id] || {};
     const stationStr = ac.stations.map((s, i) => {
@@ -1192,7 +1257,6 @@ const App = (function(){
       loadingHtml += `<br><strong>Endurance:</strong> ${fmt(endurance,2)} h to dry · ${fmt(usableEnd,2)} h after ${ac.reserve_minutes}-min reserve${unusable > 0 ? ` · <strong>Dipstick:</strong> ${fmt(dipstick,1)} ${u(ac).vol} (incl. ${fmt(unusable,1)} unusable)` : ''}`;
     }
     document.getElementById('print-loading').innerHTML = loadingHtml;
-
     const pb = document.getElementById('print-banner');
     const violations = calc(ac).violations;
     if (violations.length === 0){
@@ -1202,30 +1266,6 @@ const App = (function(){
       pb.className = 'print-only bad';
       pb.innerHTML = '<strong>⚠ Out of limits:</strong> ' + violations.join(' · ');
     }
-
-    // --- Build performance section if data permits ---
-    const perfSection = document.getElementById('print-perf-section');
-    const rTo = perfInput.to_runway;
-    const rLd = perfInput.ld_runway;
-    const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
-    const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
-    const hasPerfData = pdata || adata;
-    const hasRunway = (rTo.ident || rTo.tora > 0 || rTo.lda > 0) || (rLd.ident || rLd.tora > 0 || rLd.lda > 0);
-    if (hasPerfData && hasRunway){
-      perfSection.style.display = '';
-      buildPerfPrint(ac);
-    } else {
-      perfSection.style.display = 'none';
-      // Tell pilot why performance didn't print
-      if (mode === 'performance' && !hasRunway){
-        // user is on Perf tab with no runway — make this visible in the banner
-        pb.innerHTML += '<br><small>Performance sheet skipped: no runway entered.</small>';
-      } else if (!hasPerfData && (hasRunway || mode === 'performance')){
-        pb.innerHTML += `<br><small>Performance sheet skipped: ${ac.reg} has no P-chart or Flight Manual data configured.</small>`;
-      }
-    }
-
-    setTimeout(() => window.print(), 100);
   }
 
   // ---- performance ----
@@ -2566,6 +2606,7 @@ const App = (function(){
     document.getElementById('fuel-card').classList.toggle('hidden', isPerf);
     document.getElementById('results-card').classList.toggle('hidden', isPerf);
     document.getElementById('envelope-card').classList.toggle('hidden', isPerf);
+    document.getElementById('breakdown-card').classList.toggle('hidden', isPerf);
     document.getElementById('banner-host').classList.toggle('hidden', isPerf);
     // Perf cards visible only in perf mode
     document.getElementById('perf-cards').classList.toggle('hidden', !isPerf);
