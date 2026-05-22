@@ -146,6 +146,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
+  const APP_VERSION = 'wb-v30';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1285,7 +1286,7 @@ const App = (function(){
     if (!host) return;
     const r = perfInput[k.rw];
     if (!_selId(side) || !r.ident){
-      host.innerHTML = '<em>No runway selected. Use the cog menu to add or pick one.</em>';
+      host.innerHTML = '<em>No runway selected. Pick from the dropdown, or tap ⚙ to add one.</em>';
       return;
     }
     const surfaceLabel = ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'})[r.surface] || r.surface || 'Paved';
@@ -1308,7 +1309,7 @@ const App = (function(){
     if (!sel) return;
     const surfaceLabel = s => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'}[s] || s || 'Paved');
     const curId = _selId(side);
-    sel.innerHTML = '<option value="">— select a runway —</option>' +
+    sel.innerHTML = (curId ? '<option value="">— none (clear selection) —</option>' : '<option value="">— select a runway —</option>') +
       runways.map(rw => {
         const parts = (rw.ident || '').trim().split(/\s+/);
         const icao = parts[0] || '?';
@@ -1424,6 +1425,15 @@ const App = (function(){
     const oat = c.oat === null ? isaTo : c.oat;  // OAT defaults to T/O ISA if unset
     const daTo = P.densityAltitude(paTo, oat);
     const daLd = P.densityAltitude(paLd, oat);
+    const daStrip = document.getElementById('perf-da-strip');
+    if (daStrip){
+      const sameElev = (rTo.elev === rLd.elev);
+      if (sameElev){
+        daStrip.innerHTML = `<strong style="color:#d97706">Density Altitude: ${daTo.toFixed(0)}\u2032</strong> &nbsp; PA ${paTo.toFixed(0)}\u2032 · OAT ${oat.toFixed(0)}°C · ISA ${isaTo.toFixed(0)}°C${c.oat===null?' <em style="color:var(--muted)">(using ISA)</em>':''}`;
+      } else {
+        daStrip.innerHTML = `<strong style="color:#d97706">DA: T/O ${daTo.toFixed(0)}\u2032 · Landing ${daLd.toFixed(0)}\u2032</strong> &nbsp; OAT ${oat.toFixed(0)}°C${c.oat===null?' <em style="color:var(--muted)">(using ISA at T/O elev)</em>':''}`;
+      }
+    }
     const aiEl = document.getElementById('atmospheric-info');
     if (aiEl){
       const sameElev = (rTo.elev === rLd.elev);
@@ -1532,10 +1542,13 @@ const App = (function(){
       const stat = (label, distance, available, ok, sub) => {
         const margin = available > 0 ? (1 - distance/available) * 100 : null;
         const cls = available > 0 ? (ok ? 'ok' : 'bad') : 'warn';
+        const marginChip = margin != null
+          ? ` <span style="font-size:13px;font-weight:600;padding:2px 8px;border-radius:10px;background:${ok?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.15)'};color:${ok?'#16a34a':'#dc2626'};margin-left:6px">${ok?'+':'\u2212'}${Math.abs(margin).toFixed(0)}%</span>`
+          : '';
         return `
           <div class="stat ${cls}" style="margin-bottom:8px">
             <div class="l">${label}</div>
-            <div class="v">${distance.toFixed(0)} m</div>
+            <div class="v">${distance.toFixed(0)} m${marginChip}</div>
             <div class="s">${available > 0 ? (ok ? `✓ GO \u2014 ${margin.toFixed(0)}% margin on ${sub} (${available} m)` : `✗ NO-GO \u2014 exceeds ${sub} (${available} m) by ${(distance - available).toFixed(0)} m`) : `no ${sub} entered`}</div>
           </div>`;
       };
@@ -1628,6 +1641,29 @@ const App = (function(){
     xwHtml += groupBlock('Landing', rLd);
 
     xwHost.innerHTML = xwHtml;
+  }
+
+  function reverseRunway(side){
+    const sd = side || 'to';
+    const curId = _selId(sd);
+    if (!curId){ alert('Select a runway first.'); return; }
+    const cur = runways.find(x => x.id === curId);
+    if (!cur || cur.heading == null){ alert('No heading on current runway.'); return; }
+    const reciprocalHdg = (cur.heading + 180) % 360;
+    // Match same ICAO prefix and a heading within ±10° of reciprocal
+    const prefix = (cur.ident || '').trim().split(/\s+/)[0];
+    const candidate = runways.find(rw => {
+      if (rw.id === curId) return false;
+      const rwPrefix = (rw.ident || '').trim().split(/\s+/)[0];
+      if (rwPrefix !== prefix) return false;
+      const diff = Math.abs(((rw.heading - reciprocalHdg + 540) % 360) - 180);
+      return diff <= 10;
+    });
+    if (!candidate){
+      alert(`No reciprocal runway found in saved list for ${cur.ident}. Add one via the ⚙ menu.`);
+      return;
+    }
+    loadSavedRunway(sd, candidate.id);
   }
 
   function setPerfMethod(m){
@@ -1933,15 +1969,14 @@ const App = (function(){
     e.target.value = '';
   }
   function restoreDefaultRunways(){
-    if (!confirm('Replace all your saved runways with the defaults? Your current runway data will be lost.')) return;
-    // No default runway dataset yet; clear the list.
+    if (!confirm('Clear all saved runways? Your runway data will be lost.')) return;
     runways = [];
     selectedToRunwayId = null; selectedLdRunwayId = null;
     saveRunways(); saveSelectedToRunway(); saveSelectedLdRunway(); closeMenu();
     perfInput.to_runway = { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
     perfInput.ld_runway = { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
     if (mode === 'performance') renderPerformance();
-    alert('Saved runways cleared. (No default runway dataset is bundled yet.)');
+    alert('All saved runways cleared.');
   }
 
   function importRunways(){
@@ -2446,6 +2481,8 @@ const App = (function(){
   function init(){
     load();
     document.getElementById('btn-menu').onclick = openMenu;
+    const vEl = document.getElementById('version-label');
+    if (vEl) vEl.textContent = APP_VERSION;
     renderAll();
     if ('serviceWorker' in navigator){
       navigator.serviceWorker.register('sw.js').catch(()=>{});
@@ -2460,7 +2497,7 @@ const App = (function(){
     exportData, importData, restoreDefaults, closeMenu,
     saveScenario, loadScenario, deleteScenario,
     printSheet,
-    setWindMode, setPerfMethod, loadSavedRunway,
+    setWindMode, setPerfMethod, loadSavedRunway, reverseRunway,
     newRunway, editCurrentRunway, duplicateCurrentRunway,
     openRunwayConfig, closeRunwayConfig, saveRunwayConfig, saveRunwayConfigAsCopy, deleteRunway,
     toggleRwyMenu, closeRwyMenu,
