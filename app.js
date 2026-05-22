@@ -146,7 +146,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v30';
+  const APP_VERSION = 'wb-v33';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1564,8 +1564,10 @@ const App = (function(){
       host.innerHTML =
         `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
         windWarning +
-        stat(`T/O distance to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA') +
-        stat(`Landing distance from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA');
+        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
+        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA') +
+        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA') +
+        `</div>`;
 
       const fmt2 = x => x.toFixed(3);
       document.getElementById('perf-breakdown').innerHTML = `
@@ -1586,6 +1588,8 @@ const App = (function(){
       `;
     }
 
+    renderPerfAudit(activeMethod, pdata, adata);
+
     // Crosswind — show one block with T/O and Landing rows
     const demoXW = ac.crosswind_demonstrated_kt;
     const clubXW = ac.crosswind_club_kt;
@@ -1605,8 +1609,7 @@ const App = (function(){
         <div class="s">${limit && w.crosswind > limit ? '✗ exceeds ' + sub : (limit ? '✓ within ' + sub : sub)}</div>
       </div>`;
     };
-    xwHtml += xwRow('T/O crosswind', rTo, toWind);
-    xwHtml += xwRow('Landing crosswind', rLd, ldWind);
+    xwHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${xwRow('T/O crosswind', rTo, toWind)}${xwRow('Landing crosswind', rLd, ldWind)}</div>`;
 
     // Tailwind + better-runway suggestions for each side
     const tailwindBlock = (label, runway, w, selId) => {
@@ -1643,6 +1646,12 @@ const App = (function(){
     xwHost.innerHTML = xwHtml;
   }
 
+  function copyRunway(fromSide, toSide){
+    const fromId = _selId(fromSide);
+    if (!fromId){ alert('Select the source runway first.'); return; }
+    loadSavedRunway(toSide, fromId);
+  }
+
   function reverseRunway(side){
     const sd = side || 'to';
     const curId = _selId(sd);
@@ -1664,6 +1673,98 @@ const App = (function(){
       return;
     }
     loadSavedRunway(sd, candidate.id);
+  }
+
+  function renderPerfAudit(activeMethod, pdata, adata){
+    const host = document.getElementById('perf-audit');
+    if (!host) return;
+    if (activeMethod === 'none'){ host.innerHTML = '<em style="color:var(--muted)">No data source.</em>'; return; }
+
+    const tbl = (rows) => `<table style="width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:11px;margin:4px 0">${rows.map(r => `<tr><td style="padding:2px 6px;border:1px solid var(--border)">${r[0]}</td><td style="padding:2px 6px;border:1px solid var(--border);text-align:right">${r[1]}</td></tr>`).join('')}</table>`;
+
+    if (activeMethod === 'pchart' && pdata){
+      const tref = (pdata.takeoff && pdata.takeoff.reference_points) || [];
+      const lref = (pdata.landing && pdata.landing.reference_points) || [];
+      const ops = pdata.operation_multipliers || {};
+      const wf = pdata.wind_factor || {};
+
+      const opRows = Object.entries(ops).map(([k, v]) => [k.replace(/_/g, ' '), '×' + v.toFixed(2)]);
+      const toRows = tref.map(p => [`PA ${p.pa}\u2032 / ${p.t}°C`, p.d + ' m']);
+      const ldRows = lref.map(p => [`Elev ${p.elev}\u2032`, p.d + ' m']);
+
+      host.innerHTML = `
+        <p><strong>Source:</strong> ${pdata.source}<br>
+        <strong>Aircraft:</strong> ${pdata.name}<br>
+        <strong>CASO 4:</strong> ${pdata.caso4_compliant ? 'baked into chart \u2014 not re-applied' : 'NOT baked in'}<br>
+        ${pdata.precision ? '<strong>Precision:</strong> ' + pdata.precision + '<br>' : ''}
+        ${pdata.precision_note ? '<em>' + pdata.precision_note + '</em>' : ''}</p>
+        <p style="color:var(--warn);font-size:11px">Cross-check these values against your paper P-chart. If any reference point differs by more than the stated precision, flag it.</p>
+
+        <p style="margin:8px 0 2px"><strong>T/O reference points</strong> (Private-Paved-Day, zero wind, zero slope, MTOW)</p>
+        ${tbl(toRows)}
+
+        <p style="margin:8px 0 2px"><strong>Landing reference points</strong> (Private-Paved-Day, zero wind, zero slope, MTOW)</p>
+        ${tbl(ldRows)}
+
+        <p style="margin:8px 0 2px"><strong>Operation line multipliers</strong> (applied to PPD)</p>
+        ${tbl(opRows)}
+
+        <p style="margin:8px 0 2px"><strong>Slope</strong></p>
+        ${tbl([['per 1% slope', (pdata.slope_factor_pct_per_pct || 0).toFixed(1) + '%']])}
+
+        <p style="margin:8px 0 2px"><strong>Wind</strong></p>
+        ${tbl([
+          ['headwind reduction', ((wf.headwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
+          ['tailwind increase', ((wf.tailwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
+          ['max headwind (chart)', (wf.max_headwind_kt||0) + ' kt'],
+          ['max tailwind (chart)', (wf.max_tailwind_kt||0) + ' kt'],
+        ])}
+
+        <p style="margin:8px 0 2px"><strong>Wet runway</strong>: +15% landing (AC91-3)</p>
+      `;
+      return;
+    }
+
+    if (activeMethod === 'afm' && adata){
+      const t = adata.takeoff || {}, l = adata.landing || {};
+      host.innerHTML = `
+        <p><strong>Source:</strong> ${adata.source}<br>
+        <strong>Aircraft:</strong> ${adata.name}<br>
+        <strong>CASO 4:</strong> applied via AC91-3 factors (surface, slope, wind, wet)<br>
+        ${adata.precision ? '<strong>Precision:</strong> ' + adata.precision : ''}</p>
+        <p style="color:var(--warn);font-size:11px">Cross-check the base distances and corrections against your Flight Manual.</p>
+
+        <p style="margin:8px 0 2px"><strong>Takeoff base</strong> (MTOW, sea level, ISA, paved, dry, zero wind, zero slope)</p>
+        ${tbl([
+          ['base distance', (t.base_msl_isa_m||'?') + ' m'],
+          ['per 1000\u2032 PA', (t.pa_correction_pct_per_1000||0) + '%'],
+          ['per 10°C above ISA', (t.temp_correction_pct_per_10c||0) + '%'],
+          ['per 100 kg below MTOW', (t.weight_correction_pct_per_100kg||0) + '% (lighter = shorter)'],
+        ])}
+
+        <p style="margin:8px 0 2px"><strong>Landing base</strong></p>
+        ${tbl([
+          ['base distance', (l.base_msl_isa_m||'?') + ' m'],
+          ['per 1000\u2032 PA', (l.pa_correction_pct_per_1000||0) + '%'],
+          ['per 10°C above ISA', (l.temp_correction_pct_per_10c||0) + '%'],
+          ['per 100 kg below MTOW', (l.weight_correction_pct_per_100kg||0) + '%'],
+        ])}
+
+        <p style="margin:8px 0 2px"><strong>AC91-3 factors applied on top</strong></p>
+        ${tbl([
+          ['Grass (T/O × LD)', '1.14 × 1.18'],
+          ['Metal (T/O × LD)', '1.05 × 1.08'],
+          ['Rolled earth (T/O × LD)', '1.08 × 1.16'],
+          ['Coral (T/O × LD)', '1.00 × 1.05'],
+          ['Slope (T/O uphill / LD downhill)', '5% per 1%'],
+          ['Wind (HW / TW)', '0.5× per kt HW / 1.5× per kt TW'],
+          ['Wet runway', '+15% landing'],
+        ])}
+      `;
+      return;
+    }
+
+    host.innerHTML = '<em style="color:var(--muted)">No data available for this method.</em>';
   }
 
   function setPerfMethod(m){
@@ -2497,7 +2598,7 @@ const App = (function(){
     exportData, importData, restoreDefaults, closeMenu,
     saveScenario, loadScenario, deleteScenario,
     printSheet,
-    setWindMode, setPerfMethod, loadSavedRunway, reverseRunway,
+    setWindMode, setPerfMethod, loadSavedRunway, reverseRunway, copyRunway,
     newRunway, editCurrentRunway, duplicateCurrentRunway,
     openRunwayConfig, closeRunwayConfig, saveRunwayConfig, saveRunwayConfigAsCopy, deleteRunway,
     toggleRwyMenu, closeRwyMenu,

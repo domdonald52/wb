@@ -235,7 +235,7 @@
         <h2>Takeoff runway <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
           <select id="saved-to-rwy-select" onchange="App.loadSavedRunway('to', this.value)" style="flex:1"><option value="">— select a runway —</option></select>
-          <button class="icon-btn" onclick="App.reverseRunway('to')" title="Select the reciprocal runway from saved list" aria-label="Reverse runway">↺</button>
+          <button class="icon-btn" onclick="App.reverseRunway('to')" title="Select the reciprocal runway from saved list" aria-label="Reverse runway">↔</button>
           <button class="icon-btn" id="to-rwy-menu-btn" onclick="App.toggleRwyMenu('to', event)" title="Runway options" aria-label="Runway options">⚙</button>
         </div>
         <div id="to-rwy-menu" class="ac-menu hidden" style="margin-top:-6px;margin-bottom:8px">
@@ -269,7 +269,8 @@
         <h2>Landing runway <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
           <select id="saved-ld-rwy-select" onchange="App.loadSavedRunway('ld', this.value)" style="flex:1"><option value="">— select a runway —</option></select>
-          <button class="icon-btn" onclick="App.reverseRunway('ld')" title="Select the reciprocal runway from saved list" aria-label="Reverse runway">↺</button>
+          <button class="icon-btn" onclick="App.copyRunway('to','ld')" title="Copy T/O runway to Landing" aria-label="Copy from T/O">⤓</button>
+          <button class="icon-btn" onclick="App.reverseRunway('ld')" title="Select the reciprocal runway from saved list" aria-label="Reverse runway">↔</button>
           <button class="icon-btn" id="ld-rwy-menu-btn" onclick="App.toggleRwyMenu('ld', event)" title="Runway options" aria-label="Runway options">⚙</button>
         </div>
         <div id="ld-rwy-menu" class="ac-menu hidden" style="margin-top:-6px;margin-bottom:8px">
@@ -341,6 +342,9 @@
         <div id="perf-results"></div>
         <details style="margin-top:8px"><summary>Breakdown</summary>
           <div id="perf-breakdown"></div>
+        </details>
+        <details style="margin-top:8px"><summary>About this performance data</summary>
+          <div id="perf-audit" style="font-size:11px;line-height:1.55"></div>
         </details>
       </div>
 
