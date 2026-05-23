@@ -60,34 +60,93 @@ window.Performance = (function(){
   ];
 
   // --- P-chart distance calculation ---
+  function bilinearInterp2D(points, x, y){
+    // points: array of {pa, t, d}; x = pa, y = oat
+    // Find bracketing PAs and OATs; for missing grid cells, nearest neighbour on the other axis.
+    const xs = [...new Set(points.map(p => p.pa))].sort((a,b)=>a-b);
+    const ys = [...new Set(points.map(p => p.t))].sort((a,b)=>a-b);
+    if (xs.length === 0 || ys.length === 0) return 0;
+    // Clamp to grid
+    const xc = Math.max(xs[0], Math.min(xs[xs.length-1], x));
+    const yc = Math.max(ys[0], Math.min(ys[ys.length-1], y));
+    // Bracket
+    let x0 = xs[0], x1 = xs[xs.length-1];
+    for (let i = 0; i < xs.length - 1; i++){ if (xs[i] <= xc && xc <= xs[i+1]){ x0 = xs[i]; x1 = xs[i+1]; break; } }
+    let y0 = ys[0], y1 = ys[ys.length-1];
+    for (let j = 0; j < ys.length - 1; j++){ if (ys[j] <= yc && yc <= ys[j+1]){ y0 = ys[j]; y1 = ys[j+1]; break; } }
+    const at = (px, py) => {
+      const exact = points.find(p => p.pa === px && p.t === py);
+      if (exact) return exact.d;
+      // Missing — nearest neighbour at same PA
+      const same_pa = points.filter(p => p.pa === px);
+      if (same_pa.length){
+        return same_pa.reduce((best, p) => Math.abs(p.t - py) < Math.abs(best.t - py) ? p : best).d;
+      }
+      // Else nearest by both
+      return points.reduce((best, p) => {
+        const d2 = (p.pa - px)*(p.pa - px) + (p.t - py)*(p.t - py);
+        return d2 < ((best.pa - px)*(best.pa - px) + (best.t - py)*(best.t - py)) ? p : best;
+      }).d;
+    };
+    const f00 = at(x0, y0), f01 = at(x0, y1), f10 = at(x1, y0), f11 = at(x1, y1);
+    const dx = x1 === x0 ? 0 : (xc - x0) / (x1 - x0);
+    const dy = y1 === y0 ? 0 : (yc - y0) / (y1 - y0);
+    return f00 * (1-dx)*(1-dy) + f10 * dx*(1-dy) + f01 * (1-dx)*dy + f11 * dx*dy;
+  }
+
+  function linearInterp1D(points, x){
+    // points: array of {elev, d}
+    if (!points.length) return 0;
+    const sorted = points.slice().sort((a,b) => a.elev - b.elev);
+    if (x <= sorted[0].elev) return sorted[0].d;
+    if (x >= sorted[sorted.length-1].elev) return sorted[sorted.length-1].d;
+    for (let i = 0; i < sorted.length - 1; i++){
+      if (sorted[i].elev <= x && x <= sorted[i+1].elev){
+        const t = (x - sorted[i].elev) / (sorted[i+1].elev - sorted[i].elev);
+        return sorted[i].d * (1-t) + sorted[i+1].d * t;
+      }
+    }
+    return sorted[sorted.length-1].d;
+  }
+
   function pchartTakeoffDistance(data, pa_ft, oat_c, operation, slope_pct, wind_component_kt, wet){
-    const m = data.takeoff.ppd_model;
-    let d_ppd = m.a + m.b*pa_ft + m.c*oat_c + m.d_coef*pa_ft*oat_c + m.e*pa_ft*pa_ft + m.f*oat_c*oat_c;
-    const op_mult = data.operation_multipliers[operation] || 1.0;
+    let d_ppd;
+    if (data.takeoff.reference_points){
+      d_ppd = bilinearInterp2D(data.takeoff.reference_points, pa_ft, oat_c);
+    } else if (data.takeoff.ppd_model){
+      const m = data.takeoff.ppd_model;
+      d_ppd = m.a + m.b*pa_ft + m.c*oat_c + m.d_coef*pa_ft*oat_c + m.e*pa_ft*pa_ft + m.f*oat_c*oat_c;
+    } else {
+      d_ppd = 0;
+    }
+    const op_mult = (data.operation_multipliers && data.operation_multipliers[operation]) || 1.0;
     let d = d_ppd * op_mult;
-    // Slope: T/O uphill = +, downhill = -
     const slope_factor = 1 + (slope_pct * data.slope_factor_pct_per_pct / 100);
     d *= slope_factor;
-    // Wind
     const wind_factor = computeWindFactor(data, wind_component_kt);
     d *= wind_factor;
-    // Wet runway: AC91-3 takeoff prudence advice is "apply at least the landing wet factor"
     if (wet) d *= 1.15;
     return { distance: d, d_ppd, op_mult, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function pchartLandingDistance(data, elev_ft, operation, slope_pct, wind_component_kt, wet){
-    const m = data.landing.ppd_model;
-    let d_ppd = m.a + m.b*elev_ft + m.c*elev_ft*elev_ft;
-    const op_mult = data.operation_multipliers[operation] || 1.0;
+    let d_ppd;
+    if (data.landing.reference_points){
+      d_ppd = linearInterp1D(data.landing.reference_points, elev_ft);
+    } else if (data.landing.ppd_model){
+      const m = data.landing.ppd_model;
+      d_ppd = m.a + m.b*elev_ft + m.c*elev_ft*elev_ft;
+    } else {
+      d_ppd = 0;
+    }
+    // Landing operation multipliers — prefer landing-specific if present, else T/O multipliers as fallback
+    const mults_ld = data.operation_multipliers_ld || data.operation_multipliers || {};
+    const op_mult = mults_ld[operation] || 1.0;
     let d = d_ppd * op_mult;
-    // Slope: LD downhill = +, uphill = -
     const slope_factor = 1 - (slope_pct * data.slope_factor_pct_per_pct / 100);
     d *= slope_factor;
-    // Wind
     const wind_factor = computeWindFactor(data, wind_component_kt);
     d *= wind_factor;
-    // Wet/contaminated: AC91-3 requires +15%
     if (wet) d *= 1.15;
     return { distance: d, d_ppd, op_mult, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
   }

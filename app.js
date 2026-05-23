@@ -146,7 +146,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v34';
+  const APP_VERSION = 'wb-v38';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1044,11 +1044,11 @@ const App = (function(){
 
     let to_result = null, ld_result = null, methodLabel = '';
     if (activeMethod === 'pchart'){
-      methodLabel = `P-chart (${pdata.source})`;
+      methodLabel = `P-chart (${pdata.source})${pdata.verified_by ? ' \u2014 verified by ' + pdata.verified_by + (pdata.verified_date ? ' on ' + pdata.verified_date : '') : ''}`;
       to_result = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toW.headwind, toWet);
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldW.headwind, ldWet);
     } else if (activeMethod === 'afm'){
-      methodLabel = `Flight Manual + AC91-3 factors (${adata.source})`;
+      methodLabel = `Flight Manual + AC91-3 factors (${adata.source})${adata.verified_by ? ' \u2014 verified by ' + adata.verified_by + (adata.verified_date ? ' on ' + adata.verified_date : '') : ''}`;
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
       to_result = P.afmFactorsTakeoff(afmTo, paTo, oat, rTo.surface, rTo.slope, toW.headwind, toWet);
@@ -1162,6 +1162,7 @@ const App = (function(){
       </table>
       ${breakdownTable('Takeoff', rTo, toW, toWet, to_result)}
       ${breakdownTable('Landing', rLd, ldW, ldWet, ld_result)}
+      <div style="margin-top:10px;padding:6px 8px;border:1px dashed #999;font-size:8.5pt;font-style:italic;color:#555">Distances are derived from chart digitisations subject to \u00b110% read error (old, photocopied charts have thick lines and faded scales). Apply your own safety margin beyond the figures shown.</div>
     `;
   }
 
@@ -1557,11 +1558,11 @@ const App = (function(){
     if (opCard) opCard.classList.toggle('hidden', activeMethod !== 'pchart');
 
     if (activeMethod === 'pchart'){
-      methodNote = `Method: <strong>P-chart</strong> (${pdata.source}). CASO 4 baked in.`;
+      methodNote = `Method: <strong>P-chart</strong> \u2014 CASO 4 baked in. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
       to_result = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toWind.headwind, toWet);
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
     } else if (activeMethod === 'afm'){
-      methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong> (${adata.source}).`;
+      methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong>. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
       to_result = P.afmFactorsTakeoff(afmTo, paTo, oat, rTo.surface, rTo.slope, toWind.headwind, toWet);
@@ -1579,21 +1580,50 @@ const App = (function(){
         `<div class="banner warn" style="margin:0">No performance data computed for this aircraft. Set a P-chart or Flight Manual data source in the aircraft configuration.</div>`;
       document.getElementById('perf-breakdown').innerHTML = '';
     } else {
-      const stat = (label, distance, available, ok, sub) => {
+      const stat = (label, distance, available, ok, sub, altDistance) => {
         const margin = available > 0 ? (1 - distance/available) * 100 : null;
         const cls = available > 0 ? (ok ? 'ok' : 'bad') : 'warn';
         const marginChip = margin != null
           ? ` <span style="font-size:13px;font-weight:600;padding:2px 8px;border-radius:10px;background:${ok?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.15)'};color:${ok?'#16a34a':'#dc2626'};margin-left:6px">${ok?'+':'\u2212'}${Math.abs(margin).toFixed(0)}%</span>`
           : '';
+        const lo = Math.round(distance * 0.9);
+        const hi = Math.round(distance * 1.1);
+        let altRow = '';
+        if (altDistance != null){
+          const which = activeMethod === 'pchart' ? 'FM+CASO 4' : 'P-chart';
+          const useTheBigger = Math.max(distance, altDistance);
+          altRow = `<div style="font-size:11px;color:var(--muted);margin-top:2px">${which}: ${altDistance.toFixed(0)} m \u2014 plan for the larger: <strong>${useTheBigger.toFixed(0)} m</strong></div>`;
+        }
         return `
           <div class="stat ${cls}" style="margin-bottom:8px">
             <div class="l">${label}</div>
             <div class="v">${distance.toFixed(0)} m${marginChip}</div>
+            <div class="s">~${lo}–${hi} m (±10% chart-read tolerance)</div>
             <div class="s">${available > 0 ? (ok ? `✓ GO \u2014 ${margin.toFixed(0)}% margin on ${sub} (${available} m)` : `✗ NO-GO \u2014 exceeds ${sub} (${available} m) by ${(distance - available).toFixed(0)} m`) : `no ${sub} entered`}</div>
+            ${altRow}
           </div>`;
       };
       const toOK = rTo.tora > 0 && to_result.distance <= rTo.tora;
       const ldOK = rLd.lda > 0 && ld_result.distance <= rLd.lda;
+
+      // Compute alternative method if both available, for comparison
+      let alt_to = null, alt_ld = null;
+      if (hasP && hasA){
+        if (activeMethod === 'pchart'){
+          // Compute FM result as comparison
+          const altTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+          const altLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+          const altToR = P.afmFactorsTakeoff(altTo, paTo, oat, rTo.surface, rTo.slope, toWind.headwind, toWet);
+          const altLdR = P.afmFactorsLanding(altLd, paLd, oat, rLd.surface, rLd.slope, ldWind.headwind, ldWet);
+          alt_to = altToR && altToR.distance;
+          alt_ld = altLdR && altLdR.distance;
+        } else if (activeMethod === 'afm'){
+          const altToR = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toWind.headwind, toWet);
+          const altLdR = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
+          alt_to = altToR && altToR.distance;
+          alt_ld = altLdR && altLdR.distance;
+        }
+      }
 
       let windWarning = '';
       if (activeMethod === 'pchart' && pdata.wind_factor){
@@ -1601,13 +1631,25 @@ const App = (function(){
         if (ldWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing tailwind ${(-ldWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
       }
 
+      // Chart notes (T/O and LDG) sourced from the active method's data
+      let chartNotes = '';
+      const noteSrc = activeMethod === 'pchart' ? pdata : (activeMethod === 'afm' ? adata : null);
+      if (noteSrc && (noteSrc.notes_to || noteSrc.notes_ld)){
+        chartNotes = `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">
+          ${noteSrc.notes_to ? `<div><strong>T/O notes:</strong> ${noteSrc.notes_to}</div>` : ''}
+          ${noteSrc.notes_ld ? `<div${noteSrc.notes_to ? ' style="margin-top:4px"' : ''}><strong>Landing notes:</strong> ${noteSrc.notes_ld}</div>` : ''}
+        </div>`;
+      }
+
       host.innerHTML =
         `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
+        chartNotes +
         windWarning +
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
-        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA') +
-        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA') +
-        `</div>`;
+        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to) +
+        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld) +
+        `</div>` +
+        `<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.4;font-style:italic">Distances are derived from chart digitisations subject to \u00b110% read error (old, photocopied charts have thick lines and faded scales). Apply your own safety margin beyond the figures shown.</div>`;
 
       const fmt2 = x => x.toFixed(3);
       document.getElementById('perf-breakdown').innerHTML = `
@@ -1726,19 +1768,23 @@ const App = (function(){
       const tref = (pdata.takeoff && pdata.takeoff.reference_points) || [];
       const lref = (pdata.landing && pdata.landing.reference_points) || [];
       const ops = pdata.operation_multipliers || {};
+      const ops_ld = pdata.operation_multipliers_ld || {};
       const wf = pdata.wind_factor || {};
 
-      const opRows = Object.entries(ops).map(([k, v]) => [k.replace(/_/g, ' '), '×' + v.toFixed(2)]);
+      const opRows = Object.entries(ops).map(([k, v]) => {
+        const ldVal = ops_ld[k];
+        return [k.replace(/_/g, ' '), `T/O ×${v.toFixed(2)}${ldVal != null ? ' \u00b7 LD \u00d7' + ldVal.toFixed(2) : ''}`];
+      });
       const toRows = tref.map(p => [`PA ${p.pa}\u2032 / ${p.t}°C`, p.d + ' m']);
       const ldRows = lref.map(p => [`Elev ${p.elev}\u2032`, p.d + ' m']);
 
       host.innerHTML = `
-        <p><strong>Source:</strong> ${pdata.source}<br>
-        <strong>Aircraft:</strong> ${pdata.name}<br>
-        <strong>CASO 4:</strong> ${pdata.caso4_compliant ? 'baked into chart \u2014 not re-applied' : 'NOT baked in'}<br>
-        ${pdata.precision ? '<strong>Precision:</strong> ' + pdata.precision + '<br>' : ''}
-        ${pdata.precision_note ? '<em>' + pdata.precision_note + '</em>' : ''}</p>
-        <p style="color:var(--warn);font-size:11px">Cross-check these values against your paper P-chart. If any reference point differs by more than the stated precision, flag it.</p>
+        <p><strong>Aircraft:</strong> ${pdata.name}<br>
+        <strong>Source:</strong> ${pdata.source || '\u2014'}<br>
+        ${pdata.verified_by ? '<strong>Verified by:</strong> ' + pdata.verified_by + '<br>' : ''}
+        ${pdata.verified_date ? '<strong>Verified on:</strong> ' + pdata.verified_date + '<br>' : ''}
+        <strong>CASO 4:</strong> ${pdata.caso4_compliant ? 'baked into chart \u2014 not re-applied' : 'NOT baked in'}</p>
+        <p style="color:var(--warn);font-size:11px">Cross-check these values against your paper P-chart. Flag any significant discrepancy.</p>
 
         <p style="margin:8px 0 2px"><strong>T/O reference points</strong> (Private-Paved-Day, zero wind, zero slope, MTOW)</p>
         ${tbl(toRows)}
@@ -1768,10 +1814,11 @@ const App = (function(){
     if (activeMethod === 'afm' && adata){
       const t = adata.takeoff || {}, l = adata.landing || {};
       host.innerHTML = `
-        <p><strong>Source:</strong> ${adata.source}<br>
-        <strong>Aircraft:</strong> ${adata.name}<br>
-        <strong>CASO 4:</strong> applied via AC91-3 factors (surface, slope, wind, wet)<br>
-        ${adata.precision ? '<strong>Precision:</strong> ' + adata.precision : ''}</p>
+        <p><strong>Aircraft:</strong> ${adata.name}<br>
+        <strong>Source:</strong> ${adata.source || '\u2014'}<br>
+        ${adata.verified_by ? '<strong>Verified by:</strong> ' + adata.verified_by + '<br>' : ''}
+        ${adata.verified_date ? '<strong>Verified on:</strong> ' + adata.verified_date + '<br>' : ''}
+        <strong>CASO 4:</strong> applied via AC91-3 factors (surface, slope, wind, wet)</p>
         <p style="color:var(--warn);font-size:11px">Cross-check the base distances and corrections against your Flight Manual.</p>
 
         <p style="margin:8px 0 2px"><strong>Takeoff base</strong> (MTOW, sea level, ISA, paved, dry, zero wind, zero slope)</p>
