@@ -146,7 +146,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v41';
+  const APP_VERSION = 'wb-v44';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1396,6 +1396,45 @@ const App = (function(){
     sel.value = curId || '';
   }
 
+  // Hard cap + optional soft warning on a numeric input.
+  // spec: {min, max, warnLo, warnHi, warnMsg}
+  function _attachLimits(id, spec){
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (spec.min != null) el.min = spec.min;
+    if (spec.max != null) el.max = spec.max;
+    // Build/find a warn span sibling
+    let warn = el.parentElement.querySelector('.field-warn');
+    if (!warn){
+      warn = document.createElement('div');
+      warn.className = 'field-warn';
+      warn.style.cssText = 'font-size:11px;color:#d97706;margin-top:2px;display:none';
+      el.parentElement.appendChild(warn);
+    }
+    const check = () => {
+      const v = parseFloat(el.value);
+      if (el.value === '' || isNaN(v)){ warn.style.display = 'none'; return; }
+      // Hard clamp on blur
+      if (spec.min != null && v < spec.min){ el.value = spec.min; }
+      else if (spec.max != null && v > spec.max){ el.value = spec.max; }
+      // Soft warning
+      const v2 = parseFloat(el.value);
+      const tooLo = spec.warnLo != null && v2 < spec.warnLo;
+      const tooHi = spec.warnHi != null && v2 > spec.warnHi;
+      if ((tooLo || tooHi) && spec.warnMsg){ warn.textContent = '\u26a0 ' + spec.warnMsg; warn.style.display = ''; }
+      else { warn.style.display = 'none'; }
+    };
+    el.addEventListener('blur', () => { check(); el.dispatchEvent(new Event('input', {bubbles:true})); });
+    el.addEventListener('input', () => {
+      // Soft warning live; hard clamp only on blur (less disruptive while typing)
+      const v = parseFloat(el.value); if (isNaN(v)){ warn.style.display='none'; return; }
+      const tooLo = spec.warnLo != null && v < spec.warnLo;
+      const tooHi = spec.warnHi != null && v > spec.warnHi;
+      if ((tooLo || tooHi) && spec.warnMsg){ warn.textContent = '\u26a0 ' + spec.warnMsg; warn.style.display = ''; }
+      else { warn.style.display = 'none'; }
+    });
+  }
+
   function bindPerfHandlers(){
     const fields = ['to-condition','ld-condition','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
     fields.forEach(id => {
@@ -1403,6 +1442,13 @@ const App = (function(){
       if (!el) return;
       el.oninput = onPerfFieldChange;
       el.onchange = onPerfFieldChange;
+    });
+    // Validation
+    _attachLimits('cond-oat', {min: -40, max: 55, warnLo: -10, warnHi: 40, warnMsg: 'unusual OAT for NZ'});
+    _attachLimits('cond-qnh', {min: 950, max: 1050, warnLo: 980, warnHi: 1035, warnMsg: 'unusually high/low QNH'});
+    ['to','ld'].forEach(side => {
+      _attachLimits(side + '-wind-dir', {min: 0, max: 360});
+      _attachLimits(side + '-wind-spd', {min: 0, max: 99, warnHi: 40, warnMsg: 'unusually strong wind'});
     });
   }
 
@@ -1439,6 +1485,8 @@ const App = (function(){
     `;
     document.getElementById(side+'-wind-dir').oninput = e => { w.dir = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
     document.getElementById(side+'-wind-spd').oninput = e => { w.speed = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
+    _attachLimits(side + '-wind-dir', {min: 0, max: 360});
+    _attachLimits(side + '-wind-spd', {min: 0, max: 99, warnHi: 40, warnMsg: 'unusually strong wind'});
   }
 
   // Compute wind components and a calm-warning HTML snippet for one side
@@ -1649,6 +1697,12 @@ const App = (function(){
         if (toWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ T/O tailwind ${(-toWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
         if (ldWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing tailwind ${(-ldWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
       }
+      // Envelope (chart range) warnings
+      const env = activeMethod === 'pchart' ? P.pchartEnvelope(pdata) : (activeMethod === 'afm' ? P.afmEnvelope(adata) : null);
+      const toEnvIssues = P.envelopeStatus(env, paTo, oat, null);
+      const ldEnvIssues = P.envelopeStatus(env, paLd, oat, rLd.elev);
+      if (toEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ T/O outside chart range: ${toEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
+      if (ldEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing outside chart range: ${ldEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
 
       // Chart notes (T/O and LDG) sourced from the active method's data
       let chartNotes = '';
@@ -1793,6 +1847,15 @@ const App = (function(){
         <strong>CASO 4:</strong> ${pdata.caso4_compliant ? 'baked into chart \u2014 not re-applied' : 'NOT baked in'}</p>
         <p style="color:var(--warn);font-size:11px">Cross-check these values against your paper P-chart. Flag any significant discrepancy.</p>
 
+        <p style="margin:8px 0 2px"><strong>Valid range</strong></p>
+        ${tbl((() => {
+          const e = window.Performance.pchartEnvelope(pdata) || {};
+          return [
+            ['T/O pressure altitude', `${e.pa_min ?? '?'}–${e.pa_max ?? '?'} ft`],
+            ['T/O OAT', `${e.oat_min ?? '?'}–${e.oat_max ?? '?'} °C`],
+            ['Landing elevation', `${e.elev_min ?? '?'}–${e.elev_max ?? '?'} ft`],
+          ];
+        })())}
         <p style="margin:8px 0 2px"><strong>T/O reference points</strong> (Private-Paved-Day, zero wind, zero slope, MTOW)</p>
         ${tbl(toRows)}
 
@@ -1828,6 +1891,14 @@ const App = (function(){
         <strong>CASO 4:</strong> applied via AC91-3 factors (surface, slope, wind, wet)</p>
         <p style="color:var(--warn);font-size:11px">Cross-check the base distances and corrections against your Flight Manual.</p>
 
+        <p style="margin:8px 0 2px"><strong>Valid range</strong></p>
+        ${tbl((() => {
+          const e = window.Performance.afmEnvelope(adata) || {};
+          return [
+            ['Pressure altitude', `${e.pa_min ?? 0}–${e.pa_max ?? '?'} ft`],
+            ['OAT', `${e.oat_min ?? '?'}–${e.oat_max ?? '?'} °C`],
+          ];
+        })())}
         <p style="margin:8px 0 2px"><strong>Takeoff base</strong> (MTOW, sea level, ISA, paved, dry, zero wind, zero slope)</p>
         ${tbl([
           ['base distance', (t.base_msl_isa_m||'?') + ' m'],
@@ -1891,12 +1962,12 @@ const App = (function(){
         <div><label>Heading (°M)</label><input type="number" inputmode="decimal" id="rcfg-hdg" min="0" max="360" step="1" value="${rw.heading ?? ''}" placeholder="160"></div>
       </div>
       <div class="row">
-        <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rcfg-elev" step="1" value="${rw.elev ?? ''}" placeholder="41"></div>
-        <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rcfg-slope" step="0.1" value="${rw.slope ?? ''}" placeholder="-0.7"><small class="help">+ uphill, − downhill (T/O dir)</small></div>
+        <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rcfg-elev" min="-1000" max="14000" step="1" value="${rw.elev ?? ''}" placeholder="41"></div>
+        <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rcfg-slope" min="-15" max="15" step="0.1" value="${rw.slope ?? ''}" placeholder="-0.7"><small class="help">+ uphill, − downhill (T/O dir)</small></div>
       </div>
       <div class="row">
-        <div><label>TORA (m)</label><input type="number" inputmode="decimal" id="rcfg-tora" step="1" value="${rw.tora ?? ''}" placeholder="1936"></div>
-        <div><label>LDA (m)</label><input type="number" inputmode="decimal" id="rcfg-lda" step="1" value="${rw.lda ?? ''}" placeholder="1719"></div>
+        <div><label>TORA (m)</label><input type="number" inputmode="decimal" id="rcfg-tora" min="50" max="5000" step="1" value="${rw.tora ?? ''}" placeholder="1936"></div>
+        <div><label>LDA (m)</label><input type="number" inputmode="decimal" id="rcfg-lda" min="50" max="5000" step="1" value="${rw.lda ?? ''}" placeholder="1719"></div>
       </div>
       <div class="row">
         <div><label>Surface</label>
@@ -1930,6 +2001,11 @@ const App = (function(){
     document.getElementById('btn-rwy-save-copy').style.display = editingRunwayId ? '' : 'none';
     document.getElementById('btn-delete-rwy').style.display = editingRunwayId ? '' : 'none';
     document.getElementById('rwy-config-modal').classList.remove('hidden');
+    _attachLimits('rcfg-tora', {min: 50, max: 5000, warnLo: 300, warnMsg: 'very short runway'});
+    _attachLimits('rcfg-lda', {min: 50, max: 5000, warnLo: 300, warnMsg: 'very short runway'});
+    _attachLimits('rcfg-slope', {min: -15, max: 15, warnLo: -5, warnHi: 5, warnMsg: 'very steep'});
+    _attachLimits('rcfg-hdg', {min: 0, max: 360});
+    _attachLimits('rcfg-elev', {min: -1000, max: 14000});
   }
   function closeRunwayConfig(){ document.getElementById('rwy-config-modal').classList.add('hidden'); }
   function readRunwayForm(){
@@ -2233,26 +2309,26 @@ const App = (function(){
       <hr>
       <h3 style="font-size:14px;margin:4px 0 8px">Airframe</h3>
       <div class="row">
-        <div><label>Empty weight (${wU})</label><input type="number" inputmode="decimal" id="cfg-ew" value="${a.empty_weight}" step="0.1"></div>
-        <div><label>Empty arm (${aU})</label><input type="number" inputmode="decimal" id="cfg-ea" value="${a.empty_arm}" step="0.01"></div>
+        <div><label>Empty weight (${wU})</label><input type="number" inputmode="decimal" id="cfg-ew" value="${a.empty_weight}" min="100" max="8000" step="0.1"></div>
+        <div><label>Empty arm (${aU})</label><input type="number" inputmode="decimal" id="cfg-ea" value="${a.empty_arm}" min="0" max="10000" step="0.01"></div>
       </div>
       <div class="row">
-        <div><label>MTOW (${wU})</label><input type="number" inputmode="decimal" id="cfg-mtow" value="${a.mtow}" step="1"></div>
-        <div><label>MLW (${wU})</label><input type="number" inputmode="decimal" id="cfg-mlw" value="${a.mlw||''}" step="1" placeholder="same as MTOW"></div>
+        <div><label>MTOW (${wU})</label><input type="number" inputmode="decimal" id="cfg-mtow" value="${a.mtow}" min="100" max="10000" step="1"></div>
+        <div><label>MLW (${wU})</label><input type="number" inputmode="decimal" id="cfg-mlw" value="${a.mlw||''}" min="100" max="10000" step="1" placeholder="same as MTOW"></div>
       </div>
       <div class="row">
-        <div><label>MZFW (${wU}) — optional</label><input type="number" inputmode="decimal" id="cfg-mzfw" value="${a.mzfw||''}" step="1" placeholder="if applicable"></div>
-        <div><label>Reserve minutes</label><input type="number" inputmode="decimal" id="cfg-reserve" value="${a.reserve_minutes||30}" step="5"></div>
+        <div><label>MZFW (${wU}) — optional</label><input type="number" inputmode="decimal" id="cfg-mzfw" value="${a.mzfw||''}" min="100" max="10000" step="1" placeholder="if applicable"></div>
+        <div><label>Reserve minutes</label><input type="number" inputmode="decimal" id="cfg-reserve" value="${a.reserve_minutes||30}" min="0" max="120" step="5"></div>
       </div>
       <hr>
       <h3 style="font-size:14px;margin:4px 0 8px">Fuel</h3>
       <div class="row">
-        <div><label>Total capacity (${vU})</label><input type="number" inputmode="decimal" id="cfg-uf-total" value="${(a.fuel_total ?? (a.usable_fuel + (a.fuel_unusable||0)))}" step="0.5"><small class="help" id="cfg-usable-info">usable = total − unusable</small></div>
-        <div><label>Unusable (${vU})</label><input type="number" inputmode="decimal" id="cfg-uf-unusable" value="${a.fuel_unusable ?? 0}" step="0.1"><small class="help">included in empty weight</small></div>
+        <div><label>Total capacity (${vU})</label><input type="number" inputmode="decimal" id="cfg-uf-total" value="${(a.fuel_total ?? (a.usable_fuel + (a.fuel_unusable||0)))}" min="0" max="2000" step="0.5"><small class="help" id="cfg-usable-info">usable = total − unusable</small></div>
+        <div><label>Unusable (${vU})</label><input type="number" inputmode="decimal" id="cfg-uf-unusable" value="${a.fuel_unusable ?? 0}" min="0" max="100" step="0.1"><small class="help">included in empty weight</small></div>
       </div>
       <div class="row">
-        <div><label>Fuel arm (${aU})</label><input type="number" inputmode="decimal" id="cfg-fa" value="${a.fuel_arm}" step="0.01"></div>
-        <div class="narrow"><label>Burn (${fU})</label><input type="number" inputmode="decimal" id="cfg-burn" value="${a.burn_rate}" step="0.1"></div>
+        <div><label>Fuel arm (${aU})</label><input type="number" inputmode="decimal" id="cfg-fa" value="${a.fuel_arm}" min="0" max="10000" step="0.01"></div>
+        <div class="narrow"><label>Burn (${fU})</label><input type="number" inputmode="decimal" id="cfg-burn" value="${a.burn_rate}" min="0" max="200" step="0.1"></div>
       </div>
       <hr>
       <h3 style="font-size:14px;margin:4px 0 8px">Performance</h3>
@@ -2273,8 +2349,8 @@ const App = (function(){
       <div id="cfg-perf-info" style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:8px"></div>
       <small class="help" style="margin-bottom:8px">P-chart includes CASO 4 factors. Flight Manual uses raw distances + AC91-3 factors applied by the app. When both are set, you can switch on the Performance tab.</small>
       <div class="row">
-        <div><label>Demonstrated crosswind (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-demo" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="from Flight Manual"></div>
-        <div><label>Club crosswind limit (kt)</label><input type="number" inputmode="decimal" step="1" id="cfg-xw-club" value="${a.crosswind_club_kt ?? ''}" placeholder="if lower than demo"></div>
+        <div><label>Demonstrated crosswind (kt)</label><input type="number" inputmode="decimal" min="0" max="50" step="1" id="cfg-xw-demo" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="from Flight Manual"></div>
+        <div><label>Club crosswind limit (kt)</label><input type="number" inputmode="decimal" min="0" max="50" step="1" id="cfg-xw-club" value="${a.crosswind_club_kt ?? ''}" placeholder="if lower than demo"></div>
       </div>
       <div class="row">
         <div><label>Aircraft Group (NZ)</label>

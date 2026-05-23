@@ -9,10 +9,11 @@ window.PCHART_DATA['PA-38'] = {
   source: "P-Chart MOT/CAD Approved | Air 2054 | 14/3/1990",
   verified_by: "D.Donald, Wellington Aero Club",
   verified_date: "2026-05-23",
-  notes_to: "CASO4 incorporated | T/O to 50' | Flaps one notch | Full power before brake release | Outboard & inboard flow strips",
-  notes_ld: "CASO4 incorporated | Landing over  50' barroer | Flaps second notch | Outboard & inboard flow strips. ",
+  notes_to: "CASO4  | T/O to 50' | Flaps one notch | Full pwr before brake release | Outboard & inboard flow strips",
+  notes_ld: "CASO4 applied | Landing over  50' barrier | Flaps 2nd notch | Outboard & inboard flow strips. ",
   caso4_compliant: true,
   mtow_kg: 757.0,
+  envelope: {"pa_min": 0.0, "pa_max": 4000.0, "oat_min": -4.0, "oat_max": 40.0, "elev_min": 0.0, "elev_max": 4000.0},
   takeoff: {
     reference_points: [
       {
@@ -112,19 +113,16 @@ window.PCHART_DATA['PA-38'] = {
     max_tailwind_kt: 5,
   },
 };
-
-
-// raw FM numbers.
-
 // Auto-generated Flight Manual data for Piper PA-38-112 Tomahawk
 window.AFM_DATA['PA-38'] = {
   name: "Piper PA-38-112 Tomahawk",
   source: "PA-38-112 Flight Manual | January 1978",
   verified_by: "D.Donald, Wellington Aero Club",
   verified_date: "2026-05-23",
-  notes_to: "T/O to 50' | Flaps one notch | Full power before brake release | MTOW",
-  notes_ld: "Landing over  50' barroer | Flaps second notch | Outboard & inboard flow strips | Max braking | Full stall touchdown",
+  notes_to: "T/O to 50' | Flaps one notch | Full pwr before brake release | MTOW",
+  notes_ld: "Landing over  50' barrier | Flaps 2nd  notch | Outboard & inboard flow strips | Max braking | Full stall touchdown",
   mtow_kg: 757.0,
+  envelope: {"pa_max": 8000.0, "oat_max": 40.0},
   takeoff: {
     "base_msl_isa_m": 402.34,
     "pa_correction_pct_per_1000": 14.39,
@@ -138,4 +136,3 @@ window.AFM_DATA['PA-38'] = {
     "weight_correction_pct_per_100kg": 0.0
 },
 };
-

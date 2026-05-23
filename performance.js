@@ -227,10 +227,55 @@ window.Performance = (function(){
     return { distance: d, surf_factor, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
   }
 
+  // ---- Envelope helpers ----
+  // Returns {pa_min,pa_max,oat_min,oat_max,elev_min,elev_max} from P-chart data.
+  // Prefers explicit `envelope` field; falls back to deriving from reference_points.
+  function pchartEnvelope(data){
+    if (!data) return null;
+    if (data.envelope) return data.envelope;
+    const env = {};
+    const tref = (data.takeoff && data.takeoff.reference_points) || [];
+    if (tref.length){
+      env.pa_min = Math.min(...tref.map(p => p.pa));
+      env.pa_max = Math.max(...tref.map(p => p.pa));
+      env.oat_min = Math.min(...tref.map(p => p.t));
+      env.oat_max = Math.max(...tref.map(p => p.t));
+    }
+    const lref = (data.landing && data.landing.reference_points) || [];
+    if (lref.length){
+      env.elev_min = Math.min(...lref.map(p => p.elev));
+      env.elev_max = Math.max(...lref.map(p => p.elev));
+    }
+    return env;
+  }
+
+  // FM envelope: explicit `envelope` field on data, else defaults.
+  function afmEnvelope(data){
+    if (!data) return null;
+    if (data.envelope) return data.envelope;
+    return { pa_max: 8000, oat_min: -10, oat_max: 40, elev_max: 8000 };
+  }
+
+  // Given an envelope and the inputs, returns a list of out-of-range messages.
+  function envelopeStatus(env, pa_ft, oat_c, elev_ft){
+    if (!env) return [];
+    const issues = [];
+    if (env.pa_max != null && pa_ft > env.pa_max) issues.push(`PA ${pa_ft.toFixed(0)}\u2032 above chart max ${env.pa_max}\u2032`);
+    if (env.pa_min != null && pa_ft < env.pa_min) issues.push(`PA ${pa_ft.toFixed(0)}\u2032 below chart min ${env.pa_min}\u2032`);
+    if (env.oat_max != null && oat_c > env.oat_max) issues.push(`OAT ${oat_c.toFixed(0)}°C above chart max ${env.oat_max}°C`);
+    if (env.oat_min != null && oat_c < env.oat_min) issues.push(`OAT ${oat_c.toFixed(0)}°C below chart min ${env.oat_min}°C`);
+    if (elev_ft != null){
+      if (env.elev_max != null && elev_ft > env.elev_max) issues.push(`Elev ${elev_ft.toFixed(0)}\u2032 above chart max ${env.elev_max}\u2032`);
+      if (env.elev_min != null && elev_ft < env.elev_min) issues.push(`Elev ${elev_ft.toFixed(0)}\u2032 below chart min ${env.elev_min}\u2032`);
+    }
+    return issues;
+  }
+
   return {
     windComponents, pressureAltitude, isaTemp, densityAltitude,
     pchartTakeoffDistance, pchartLandingDistance,
     afmFactorsTakeoff, afmFactorsLanding,
+    pchartEnvelope, afmEnvelope, envelopeStatus,
     OPERATIONS, SURFACE_FACTORS_AC91,
   };
 })();
