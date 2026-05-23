@@ -146,7 +146,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v40';
+  const APP_VERSION = 'wb-v41';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1192,6 +1192,41 @@ const App = (function(){
   }
 
   function _doPrint(ac, includeWb, includePerf){
+    // Confirm if anything is out of limits
+    const issues = [];
+    if (includeWb){
+      const r = calc(ac);
+      if (r.violations.length) issues.push(`W&B: ${r.violations[0]}${r.violations.length > 1 ? ' (+' + (r.violations.length - 1) + ' more)' : ''}`);
+    }
+    if (includePerf){
+      const rTo = perfInput.to_runway, rLd = perfInput.ld_runway;
+      const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
+      const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
+      const method = perfInput.perf_method && ((perfInput.perf_method === 'pchart' && pdata) || (perfInput.perf_method === 'afm' && adata)) ? perfInput.perf_method : (pdata ? 'pchart' : (adata ? 'afm' : null));
+      if (method){
+        const c = perfInput.conditions, P = window.Performance;
+        const paTo = P.pressureAltitude(rTo.elev || 0, c.qnh), paLd = P.pressureAltitude(rLd.elev || 0, c.qnh);
+        const oat = c.oat === null ? P.isaTemp(paTo) : c.oat;
+        const wTo = perfInput.to_wind, wLd = perfInput.ld_wind;
+        const hwTo = wTo.mode === 'dirspeed' ? P.windComponents(rTo.heading, wTo.dir, wTo.speed).headwind : wTo.headwind_component;
+        const hwLd = wLd.mode === 'dirspeed' ? P.windComponents(rLd.heading, wLd.dir, wLd.speed).headwind : wLd.headwind_component;
+        const toWet = perfInput.to_condition !== 'dry', ldWet = perfInput.ld_condition !== 'dry';
+        let tor, ldr;
+        if (method === 'pchart'){
+          tor = P.pchartTakeoffDistance(pdata, paTo, oat, deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface), rTo.slope, hwTo, toWet);
+          ldr = P.pchartLandingDistance(pdata, rLd.elev, deriveOperationKey(perfInput.op_type, perfInput.op_time, rLd.surface), rLd.slope, hwLd, ldWet);
+        } else {
+          const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+          const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+          tor = P.afmFactorsTakeoff(afmTo, paTo, oat, rTo.surface, rTo.slope, hwTo, toWet);
+          ldr = P.afmFactorsLanding(afmLd, paLd, oat, rLd.surface, rLd.slope, hwLd, ldWet);
+        }
+        if (tor && rTo.tora > 0 && tor.distance > rTo.tora) issues.push(`T/O ${tor.distance.toFixed(0)} m exceeds TORA ${rTo.tora} m`);
+        if (ldr && rLd.lda > 0 && ldr.distance > rLd.lda) issues.push(`Landing ${ldr.distance.toFixed(0)} m exceeds LDA ${rLd.lda} m`);
+      }
+    }
+    if (issues.length && !confirm('⚠ NO-GO conditions:\n\n' + issues.join('\n') + '\n\nPrint anyway?')) return;
+
     document.getElementById('print-acline').textContent = `${ac.reg} — ${ac.type}`;
     document.getElementById('print-when').textContent = new Date().toLocaleString();
 
