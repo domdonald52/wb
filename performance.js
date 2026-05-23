@@ -183,15 +183,13 @@ window.Performance = (function(){
     // Slope (AC91-3 Table 2: 5% per 1% for T/O uphill)
     const slope_factor = 1 + (slope_pct * 5 / 100);
     d *= slope_factor;
-    // Wind: AC91-3 says reduce headwind effect by 50% and assume tailwind 150%.
-    // I.e., 'effective' wind = 0.5 * headwind, then apply a typical 1.5%/kt headwind factor.
+    // Wind: 1.5% per HW kt, 6% per TW kt (matches CASO-baked P-chart factors).
+    // AC91-3's "use 50% HW / 150% TW" reduction is already baked into these % constants.
     let wind_factor;
     if (wind_kt >= 0){
-      const effective = 0.5 * wind_kt;
-      wind_factor = 1 - 0.015 * Math.min(effective, 20);
+      wind_factor = 1 - 0.015 * Math.min(wind_kt, 20);
     } else {
-      const effective = 1.5 * (-wind_kt);
-      wind_factor = 1 + 0.06 * Math.min(effective, 30);
+      wind_factor = 1 + 0.06 * Math.min(-wind_kt, 5);
     }
     d *= wind_factor;
     // Wet: AC91-3 says +15% for prudent T/O on wet
@@ -216,11 +214,9 @@ window.Performance = (function(){
     d *= slope_factor;
     let wind_factor;
     if (wind_kt >= 0){
-      const effective = 0.5 * wind_kt;
-      wind_factor = 1 - 0.015 * Math.min(effective, 20);
+      wind_factor = 1 - 0.015 * Math.min(wind_kt, 20);
     } else {
-      const effective = 1.5 * (-wind_kt);
-      wind_factor = 1 + 0.06 * Math.min(effective, 30);
+      wind_factor = 1 + 0.06 * Math.min(-wind_kt, 5);
     }
     d *= wind_factor;
     if (wet) d *= 1.15;
