@@ -146,7 +146,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v38';
+  const APP_VERSION = 'wb-v39';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1135,31 +1135,22 @@ const App = (function(){
         <strong>Method:</strong> ${methodLabel || 'none'}${activeMethod === 'pchart' ? ' \u2014 CASO 4 baked into chart' : (activeMethod === 'afm' ? ' \u2014 CASO 4 (AC91-3) factors applied' : '')}
         ${activeMethod === 'pchart' ? '<br><strong>T/O chart line:</strong> ' + lineLabels[opKeyTo] + '<br><strong>Landing chart line:</strong> ' + lineLabels[opKeyLd] : ''}
       </div>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9pt">
-        <thead><tr style="background:#eee">
-          <td style="border:1px solid #999;padding:6px;font-weight:600">Performance</td>
-          <td style="border:1px solid #999;padding:6px;font-weight:600;text-align:right">Required</td>
-          <td style="border:1px solid #999;padding:6px;font-weight:600;text-align:right">Available</td>
-          <td style="border:1px solid #999;padding:6px;font-weight:600;text-align:right">Margin</td>
-          <td style="border:1px solid #999;padding:6px;font-weight:600;text-align:center">GO/NO-GO</td>
-        </tr></thead>
-        <tbody>
-          <tr>
-            <td style="border:1px solid #999;padding:6px">T/O distance to 50\u2032${rTo.ident ? ' (' + rTo.ident + ')' : ''}</td>
-            <td style="border:1px solid #999;padding:6px;text-align:right">${fmt0(to_d)} m</td>
-            <td style="border:1px solid #999;padding:6px;text-align:right">${rTo.tora || '\u2014'} m</td>
-            <td style="border:1px solid #999;padding:6px;text-align:right">${toMargin}</td>
-            <td style="border:1px solid #999;padding:6px;text-align:center">${to_d != null && rTo.tora > 0 ? (to_d <= rTo.tora ? '<span style="color:#060">✓ GO</span>' : '<span style="color:#a00">✗ NO-GO</span>') : '\u2014'}</td>
-          </tr>
-          <tr>
-            <td style="border:1px solid #999;padding:6px">Landing distance from 50\u2032${rLd.ident ? ' (' + rLd.ident + ')' : ''}</td>
-            <td style="border:1px solid #999;padding:6px;text-align:right">${fmt0(ld_d)} m</td>
-            <td style="border:1px solid #999;padding:6px;text-align:right">${rLd.lda || '\u2014'} m</td>
-            <td style="border:1px solid #999;padding:6px;text-align:right">${ldMargin}</td>
-            <td style="border:1px solid #999;padding:6px;text-align:center">${ld_d != null && rLd.lda > 0 ? (ld_d <= rLd.lda ? '<span style="color:#060">✓ GO</span>' : '<span style="color:#a00">✗ NO-GO</span>') : '\u2014'}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;font-size:9pt">
+        <div style="border:1px solid #999;padding:6px 8px;border-radius:4px">
+          <div style="font-weight:600;font-size:8.5pt;color:#555">T/O distance to 50\u2032${rTo.ident ? ' \u2014 ' + rTo.ident : ''}</div>
+          <div style="font-size:14pt;font-weight:700;line-height:1.2">${fmt0(to_d)} m
+            <span style="font-size:9pt;font-weight:600;color:${to_d != null && rTo.tora > 0 ? (to_d <= rTo.tora ? '#060' : '#a00') : '#666'}">${to_d != null && rTo.tora > 0 ? (to_d <= rTo.tora ? '\u2713 GO' : '\u2717 NO-GO') : ''}</span>
+          </div>
+          <div style="font-size:8.5pt;color:#555">TORA ${rTo.tora || '\u2014'} m \u00b7 margin ${toMargin}</div>
+        </div>
+        <div style="border:1px solid #999;padding:6px 8px;border-radius:4px">
+          <div style="font-weight:600;font-size:8.5pt;color:#555">Landing distance from 50\u2032${rLd.ident ? ' \u2014 ' + rLd.ident : ''}</div>
+          <div style="font-size:14pt;font-weight:700;line-height:1.2">${fmt0(ld_d)} m
+            <span style="font-size:9pt;font-weight:600;color:${ld_d != null && rLd.lda > 0 ? (ld_d <= rLd.lda ? '#060' : '#a00') : '#666'}">${ld_d != null && rLd.lda > 0 ? (ld_d <= rLd.lda ? '\u2713 GO' : '\u2717 NO-GO') : ''}</span>
+          </div>
+          <div style="font-size:8.5pt;color:#555">LDA ${rLd.lda || '\u2014'} m \u00b7 margin ${ldMargin}</div>
+        </div>
+      </div>
       ${breakdownTable('Takeoff', rTo, toW, toWet, to_result)}
       ${breakdownTable('Landing', rLd, ldW, ldWet, ld_result)}
       <div style="margin-top:10px;padding:6px 8px;border:1px dashed #999;font-size:8.5pt;font-style:italic;color:#555">Distances are derived from chart digitisations subject to \u00b110% read error (old, photocopied charts have thick lines and faded scales). Apply your own safety margin beyond the figures shown.</div>
@@ -1341,7 +1332,17 @@ const App = (function(){
       surfaceLabel,
     ];
     if (r.group != null) parts.push(`Group ${r.group}`);
-    host.innerHTML = parts.join(' \u00b7 ');
+    // Group compatibility chip vs current aircraft
+    const ac = fleet.find(a => a.id === selectedId);
+    let chip = '';
+    if (ac && ac.group != null && r.group != null){
+      if (ac.group <= r.group){
+        chip = ` <span style="background:rgba(22,163,74,0.18);color:#16a34a;padding:1px 6px;border-radius:8px;font-size:11px;font-weight:600">\u2713 Group compatible</span>`;
+      } else {
+        chip = ` <span style="background:rgba(220,38,38,0.18);color:#dc2626;padding:1px 6px;border-radius:8px;font-size:11px;font-weight:600">\u2717 Aircraft Grp ${ac.group} > Rwy Grp ${r.group}</span>`;
+      }
+    }
+    host.innerHTML = parts.join(' \u00b7 ') + chip;
   }
 
   function renderSavedRunwaysPicker(side){
@@ -1598,8 +1599,8 @@ const App = (function(){
           <div class="stat ${cls}" style="margin-bottom:8px">
             <div class="l">${label}</div>
             <div class="v">${distance.toFixed(0)} m${marginChip}</div>
-            <div class="s">~${lo}–${hi} m (±10% chart-read tolerance)</div>
-            <div class="s">${available > 0 ? (ok ? `✓ GO \u2014 ${margin.toFixed(0)}% margin on ${sub} (${available} m)` : `✗ NO-GO \u2014 exceeds ${sub} (${available} m) by ${(distance - available).toFixed(0)} m`) : `no ${sub} entered`}</div>
+            <div class="s">~${lo}\u2013${hi} m (\u00b110% tolerance)</div>
+            <div class="s">${available > 0 ? (ok ? `\u2713 GO \u2014 ${sub} ${available} m` : `\u2717 NO-GO \u2014 exceeds ${sub} ${available} m by ${(distance - available).toFixed(0)} m`) : `no ${sub} entered`}</div>
             ${altRow}
           </div>`;
       };
@@ -1648,8 +1649,7 @@ const App = (function(){
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
         stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to) +
         stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld) +
-        `</div>` +
-        `<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.4;font-style:italic">Distances are derived from chart digitisations subject to \u00b110% read error (old, photocopied charts have thick lines and faded scales). Apply your own safety margin beyond the figures shown.</div>`;
+        `</div>`;
 
       const fmt2 = x => x.toFixed(3);
       document.getElementById('perf-breakdown').innerHTML = `
@@ -1713,17 +1713,6 @@ const App = (function(){
     };
     xwHtml += tailwindBlock('T/O', rTo, toWind, _selId('to'));
     xwHtml += tailwindBlock('Landing', rLd, ldWind, _selId('ld'));
-
-    // Group sanity checks (one per side)
-    const groupBlock = (label, runway) => {
-      if (ac.group == null || runway.group == null) return '';
-      if (ac.group > runway.group){
-        return `<div class="banner warn" style="margin-top:8px;font-size:12px">⚠ ${label}: Aircraft Group ${ac.group} exceeds aerodrome Group ${runway.group}. Sanity check only \u2014 verify with operator / AIP.</div>`;
-      }
-      return `<div class="banner ok" style="margin-top:8px;font-size:12px">✓ ${label}: Aircraft Group ${ac.group} is compatible with aerodrome Group ${runway.group}.</div>`;
-    };
-    xwHtml += groupBlock('T/O', rTo);
-    xwHtml += groupBlock('Landing', rLd);
 
     xwHost.innerHTML = xwHtml;
   }
