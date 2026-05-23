@@ -146,7 +146,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v39';
+  const APP_VERSION = 'wb-v40';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1337,9 +1337,9 @@ const App = (function(){
     let chip = '';
     if (ac && ac.group != null && r.group != null){
       if (ac.group <= r.group){
-        chip = ` <span style="background:rgba(22,163,74,0.18);color:#16a34a;padding:1px 6px;border-radius:8px;font-size:11px;font-weight:600">\u2713 Group compatible</span>`;
+        chip = `<br><span style="background:rgba(22,163,74,0.18);color:#16a34a;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;display:inline-block;margin-top:4px">\u2713 Group compatible</span>`;
       } else {
-        chip = ` <span style="background:rgba(220,38,38,0.18);color:#dc2626;padding:1px 6px;border-radius:8px;font-size:11px;font-weight:600">\u2717 Aircraft Grp ${ac.group} > Rwy Grp ${r.group}</span>`;
+        chip = `<br><span style="background:rgba(220,38,38,0.18);color:#dc2626;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;display:inline-block;margin-top:4px">\u2717 Aircraft Grp ${ac.group} > Rwy Grp ${r.group}</span>`;
       }
     }
     host.innerHTML = parts.join(' \u00b7 ') + chip;
@@ -1383,13 +1383,9 @@ const App = (function(){
   }
 
   function setWindMode(side, m){
+    // Component mode removed — always dirspeed. Kept for backward compat.
     const k = _side(side);
-    perfInput[k.wind].mode = m;
-    document.querySelectorAll(`[data-wind-side="${side}"]`).forEach(b => {
-      const isActive = b.dataset.windMode === m;
-      b.style.background = isActive ? '#d97706' : '';
-      b.style.color = isActive ? '#fff' : '';
-    });
+    perfInput[k.wind].mode = 'dirspeed';
     renderWindInputs(side);
     computeAndRenderPerf();
   }
@@ -1399,28 +1395,15 @@ const App = (function(){
     const host = document.getElementById(k.windInputsId);
     if (!host) return;
     const w = perfInput[k.wind];
-    if (w.mode === 'dirspeed'){
-      host.innerHTML = `
-        <div class="row">
-          <div><label>Direction (°M)</label><input type="number" inputmode="decimal" id="${side}-wind-dir" min="0" max="360" step="10" value="${w.dir || ''}"><small class="help">degrees magnetic</small></div>
-          <div><label>Speed (kt)</label><input type="number" inputmode="decimal" id="${side}-wind-spd" min="0" step="1" value="${w.speed || ''}"><small class="help">wind speed in knots</small></div>
-        </div>
-      `;
-      document.getElementById(side+'-wind-dir').oninput = e => { w.dir = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
-      document.getElementById(side+'-wind-spd').oninput = e => { w.speed = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
-    } else {
-      host.innerHTML = `
-        <div class="row">
-          <div><label>Headwind component (kt)</label><input type="number" inputmode="decimal" id="${side}-wind-hwc" step="1" value="${w.headwind_component || ''}"><small class="help">negative = tailwind</small></div>
-        </div>
-      `;
-      document.getElementById(side+'-wind-hwc').oninput = e => { w.headwind_component = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
-    }
-    document.querySelectorAll(`[data-wind-side="${side}"]`).forEach(b => {
-      const isActive = b.dataset.windMode === w.mode;
-      b.style.background = isActive ? '#d97706' : '';
-      b.style.color = isActive ? '#fff' : '';
-    });
+    w.mode = 'dirspeed';
+    host.innerHTML = `
+      <div class="row">
+        <div><label>Direction (°M)</label><input type="number" inputmode="decimal" id="${side}-wind-dir" min="0" max="360" step="10" value="${w.dir || ''}"><small class="help">degrees magnetic</small></div>
+        <div><label>Speed (kt)</label><input type="number" inputmode="decimal" id="${side}-wind-spd" min="0" step="1" value="${w.speed || ''}"><small class="help">wind speed in knots</small></div>
+      </div>
+    `;
+    document.getElementById(side+'-wind-dir').oninput = e => { w.dir = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
+    document.getElementById(side+'-wind-spd').oninput = e => { w.speed = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
   }
 
   // Compute wind components and a calm-warning HTML snippet for one side
@@ -2582,6 +2565,7 @@ const App = (function(){
       try {
         const data = JSON.parse(ev.target.result);
         if (!Array.isArray(data)) throw new Error('not an array');
+        closeMenu();
         openPicker({
           title: 'Import aircraft',
           subtitle: `${data.length} aircraft in this file. Choose which to add. Existing aircraft with the same registration will be replaced.`,
