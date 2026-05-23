@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v49';
+  const APP_VERSION = 'wb-v51';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -311,6 +311,22 @@ const App = (function(){
       const w = sv[idx] !== undefined ? sv[idx] : s.default || 0;
       if (s.max && w > s.max) violations.push(`${s.name} ${fmt(w)} exceeds limit ${fmt(s.max)} ${u(ac).w}`);
     });
+    // Combined station-group limits (e.g. Baggage Area 1+2 combined max)
+    if (Array.isArray(ac.station_groups)){
+      ac.station_groups.forEach(g => {
+        if (!g || !Array.isArray(g.stations) || !g.max) return;
+        // Only count valid station indices
+        const validIdxs = g.stations.filter(idx => Number.isInteger(idx) && idx >= 0 && idx < ac.stations.length);
+        if (validIdxs.length === 0) return;
+        const total = validIdxs.reduce((sum, idx) => {
+          const w = sv[idx] !== undefined ? sv[idx] : (ac.stations[idx] && ac.stations[idx].default) || 0;
+          return sum + w;
+        }, 0);
+        if (total > g.max){
+          violations.push(`${g.name || 'Combined'} ${fmt(total)} exceeds limit ${fmt(g.max)} ${u(ac).w}`);
+        }
+      });
+    }
     if (fuel > ac.usable_fuel + 0.01) violations.push(`Fuel ${fmt(fuel,1)} exceeds usable ${fmt(ac.usable_fuel,1)} ${u(ac).vol}`);
 
     return { ac, items, tow, m_to, cg_to, ldw, cg_ld, zfw, cg_zf, fuelWeight, fuelBurned, burnedWeight, fuel, duration, violations };
@@ -771,6 +787,23 @@ const App = (function(){
 
     // Breakdown
     const rows = r.items.map(i => `<tr><td>${i.name}</td><td>${fmt(i.w, 1)}</td><td>${fmtArm(i.arm, ac)}</td><td>${fmt(i.w * i.arm, 1)}</td></tr>`).join('');
+    let groupSummary = '';
+    if (Array.isArray(ac.station_groups) && ac.station_groups.length){
+      const sv = stationValues[ac.id] || {};
+      const lines = ac.station_groups.map(g => {
+        if (!g || !Array.isArray(g.stations)) return '';
+        const validIdxs = g.stations.filter(idx => Number.isInteger(idx) && idx >= 0 && idx < ac.stations.length);
+        if (validIdxs.length === 0) return '';
+        const total = validIdxs.reduce((s, idx) => {
+          const w = sv[idx] !== undefined ? sv[idx] : (ac.stations[idx] && ac.stations[idx].default) || 0;
+          return s + w;
+        }, 0);
+        const ok = !g.max || total <= g.max;
+        const names = validIdxs.map(i => ac.stations[i] && ac.stations[i].name).filter(Boolean).join(' + ');
+        return `<div style="font-size:12px;margin-top:4px;color:${ok ? 'var(--ok)' : 'var(--bad)'}">${ok ? '\u2713' : '\u2717'} <strong>${g.name || 'Combined'}</strong> (${names}): ${fmt(total,1)} / ${fmt(g.max||0,0)} ${u(ac).w}</div>`;
+      }).filter(Boolean).join('');
+      if (lines) groupSummary = `<div style="margin-top:8px;padding:6px 8px;background:var(--panel-2);border-radius:6px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Combined station limits</div>${lines}</div>`;
+    }
     document.getElementById('breakdown').innerHTML = `
       <table>
         <thead><tr><td><strong>Item</strong></td><td><strong>${u(ac).w}</strong></td><td><strong>${u(ac).arm}</strong></td><td><strong>moment</strong></td></tr></thead>
@@ -780,6 +813,7 @@ const App = (function(){
           <tr><td><strong>Landing total</strong></td><td><strong>${fmt(r.ldw,1)}</strong></td><td><strong>${fmtArm(r.cg_ld, ac)}</strong></td><td><strong>${fmt(r.m_to - r.burnedWeight*ac.fuel_arm, 1)}</strong></td></tr>
         </tbody>
       </table>
+      ${groupSummary}
     `;
 
     document.getElementById('chart-caption').textContent = 'green = takeoff · amber = landing · dashed line = fuel burn track';
@@ -2423,6 +2457,10 @@ const App = (function(){
       <small class="help" style="margin-bottom:6px">Values from Flight Manual.</small>
       <div id="cfg-stations"></div>
       <hr>
+      <h3 style="font-size:14px;margin:4px 0 8px">Combined station limits <button class="icon-btn" onclick="App.addStationGroup()" aria-label="Add combined limit">+</button></h3>
+      <small class="help" style="margin-bottom:6px">Optional. Apply a maximum to the SUM of several stations (e.g. "Baggage Area 1 + Area 2 ≤ 54 kg"). Each station may still have its own individual limit.</small>
+      <div id="cfg-station-groups"></div>
+      <hr>
       <h3 style="font-size:14px;margin:4px 0 8px">CG envelope <button class="icon-btn" onclick="App.addEnvPoint()" aria-label="Add point">+</button></h3>
       <small class="help" style="margin-bottom:6px">Envelope vertices from Flight Manual, in increasing weight. fwd = forward CG limit, aft = rear CG limit at that weight.</small>
       <div id="cfg-envelope"></div>
@@ -2499,7 +2537,70 @@ const App = (function(){
     document.getElementById('cfg-afm')?.addEventListener('change', updatePerfInfo);
     updatePerfInfo();
     renderStationEditors(a);
+    renderStationGroupsEditor(a);
     renderEnvEditor(a);
+  }
+  function renderStationGroupsEditor(a){
+    const host = document.getElementById('cfg-station-groups');
+    if (!host) return;
+    const isMetric = a.units === 'metric';
+    const wU = isMetric ? 'kg' : 'lb';
+    if (!Array.isArray(a.station_groups)) a.station_groups = [];
+    if (a.station_groups.length === 0){
+      host.innerHTML = '<small class="help" style="color:var(--muted)"><em>No combined limits set. Tap + to add one.</em></small>';
+      return;
+    }
+    host.innerHTML = a.station_groups.map((g, gidx) => `
+      <div class="station">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <input type="text" value="${g.name || ''}" data-gidx="${gidx}" data-gf="name" placeholder="e.g. Baggage total" style="flex:1">
+          <button class="icon-btn" onclick="App.removeStationGroup(${gidx})" aria-label="Remove" title="Remove">\u2715</button>
+        </div>
+        <div class="row" style="margin-bottom:6px">
+          <div><label>Max combined (${wU})</label><input type="number" inputmode="decimal" step="1" value="${g.max || ''}" data-gidx="${gidx}" data-gf="max"></div>
+          <div></div>
+        </div>
+        <label style="font-size:12px">Stations included in this limit</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0">
+          ${a.stations.map((s, sidx) => `
+            <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;background:var(--panel-2);padding:4px 8px;border-radius:6px;cursor:pointer">
+              <input type="checkbox" data-gidx="${gidx}" data-gf="station" data-sidx="${sidx}" ${(g.stations||[]).includes(sidx) ? 'checked' : ''}>
+              ${s.name || ('Station '+(sidx+1))}
+            </label>`).join('')}
+        </div>
+      </div>
+    `).join('');
+    host.querySelectorAll('input').forEach(inp => {
+      inp.oninput = inp.onchange = e => {
+        const gidx = +e.target.dataset.gidx;
+        const gf = e.target.dataset.gf;
+        const g = a.station_groups[gidx];
+        if (!g) return;
+        if (gf === 'name') g.name = e.target.value;
+        else if (gf === 'max') g.max = parseFloat(e.target.value) || 0;
+        else if (gf === 'station'){
+          const sidx = +e.target.dataset.sidx;
+          if (!Array.isArray(g.stations)) g.stations = [];
+          if (e.target.checked){
+            if (!g.stations.includes(sidx)) g.stations.push(sidx);
+          } else {
+            g.stations = g.stations.filter(i => i !== sidx);
+          }
+        }
+      };
+    });
+  }
+  function addStationGroup(){
+    const a = window._editingAircraft;
+    if (!Array.isArray(a.station_groups)) a.station_groups = [];
+    a.station_groups.push({ name: '', max: 0, stations: [] });
+    renderStationGroupsEditor(a);
+  }
+  function removeStationGroup(gidx){
+    const a = window._editingAircraft;
+    if (!Array.isArray(a.station_groups)) return;
+    a.station_groups.splice(gidx, 1);
+    renderStationGroupsEditor(a);
   }
   function renderStationEditors(a){
     const host = document.getElementById('cfg-stations');
@@ -2554,7 +2655,19 @@ const App = (function(){
   function removeStation(idx){
     const a = window._editingAircraft;
     a.stations.splice(idx, 1);
+    // Reindex any combined-limit groups so they stay consistent
+    if (Array.isArray(a.station_groups)){
+      a.station_groups.forEach(g => {
+        if (!Array.isArray(g.stations)) return;
+        g.stations = g.stations
+          .filter(i => i !== idx)        // drop removed station
+          .map(i => i > idx ? i - 1 : i); // shift indices above
+      });
+      // Drop empty groups (no stations left)
+      a.station_groups = a.station_groups.filter(g => Array.isArray(g.stations) && g.stations.length > 0);
+    }
     renderStationEditors(a);
+    renderStationGroupsEditor(a);
   }
   function addEnvPoint(){
     const a = window._editingAircraft;
@@ -2836,7 +2949,7 @@ const App = (function(){
     init, setMode, newAircraft, openConfig, closeConfig, saveConfig, saveConfigAsCopy, deleteAircraft, duplicateAircraft,
     selectAircraft, toggleAcMenu, closeAcMenu,
     openManageAircraft, closeManageAircraft, manageSelect, manageEdit, manageDuplicate, manageDelete,
-    addStation, removeStation, addEnvPoint, removeEnvPoint,
+    addStation, removeStation, addStationGroup, removeStationGroup, addEnvPoint, removeEnvPoint,
     exportData, importData, restoreDefaults, closeMenu,
     saveScenario, loadScenario, deleteScenario,
     printSheet,
