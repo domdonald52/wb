@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v47';
+  const APP_VERSION = 'wb-v48';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1810,17 +1810,36 @@ const App = (function(){
   function copyFromTakeoff(){
     const fromId = _selId('to');
     if (!fromId){ alert('Select the takeoff runway first.'); return; }
-    // Copy runway + selection
     _setSelId('ld', fromId);
     perfInput.ld_runway = JSON.parse(JSON.stringify(perfInput.to_runway));
-    // Copy condition
     perfInput.ld_condition = perfInput.to_condition;
-    // Copy wind
     perfInput.ld_wind = JSON.parse(JSON.stringify(perfInput.to_wind));
-    // Copy atmospherics
     perfInput.ld_oat = perfInput.to_oat;
     perfInput.ld_qnh = perfInput.to_qnh;
     renderPerformance();
+    // Flash the landing inputs green to confirm
+    requestAnimationFrame(() => {
+      const ids = ['saved-ld-rwy-select', 'ld-condition', 'ld-wind-dir', 'ld-wind-spd', 'ld-oat', 'ld-qnh'];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const orig = el.style.transition;
+        el.style.transition = 'background-color 0.2s';
+        el.style.backgroundColor = 'rgba(22,163,74,0.35)';
+        setTimeout(() => {
+          el.style.backgroundColor = '';
+          setTimeout(() => { el.style.transition = orig; }, 200);
+        }, 800);
+      });
+      // Also flash the runway summary panel
+      const sum = document.getElementById('ld-rwy-summary');
+      if (sum){
+        const origBg = sum.style.backgroundColor;
+        sum.style.transition = 'background-color 0.2s';
+        sum.style.backgroundColor = 'rgba(22,163,74,0.25)';
+        setTimeout(() => { sum.style.backgroundColor = origBg; }, 800);
+      }
+    });
   }
 
   function reverseRunway(side){
