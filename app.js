@@ -137,16 +137,18 @@ const App = (function(){
     to_runway: { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null },
     to_condition: 'dry',
     to_wind: { mode: 'dirspeed', dir: 0, speed: 0, headwind_component: 0 },
+    to_oat: null, to_qnh: 1013,
     ld_runway: { id: null, ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null },
     ld_condition: 'dry',
     ld_wind: { mode: 'dirspeed', dir: 0, speed: 0, headwind_component: 0 },
-    conditions: { oat: null, qnh: 1013 },
+    ld_oat: null, ld_qnh: 1013,
+    conditions: { oat: null, qnh: 1013 },  // legacy/shared kept for compat; not used in new UI
     op_type: 'private',
     op_time: 'day',
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v44';
+  const APP_VERSION = 'wb-v46';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -194,9 +196,17 @@ const App = (function(){
   function load(){
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw){ fleet = JSON.parse(raw).map(migrate); }
-      else { fleet = JSON.parse(JSON.stringify(DEFAULT_FLEET)); save(); }
-    } catch(e){ fleet = JSON.parse(JSON.stringify(DEFAULT_FLEET)); }
+      if (raw){
+        try { fleet = JSON.parse(raw).map(migrate); }
+        catch(parseErr){
+          // Don't overwrite — leave fleet empty so user can see they need to import.
+          console.error('Fleet parse failed; data preserved in localStorage:', parseErr);
+          fleet = [];
+        }
+      } else {
+        fleet = [];
+      }
+    } catch(e){ fleet = []; }
     selectedId = localStorage.getItem(SELECTED_KEY) || (fleet[0] && fleet[0].id);
     if (!fleet.find(a => a.id === selectedId)) selectedId = fleet[0] && fleet[0].id;
     // Recent runways
@@ -208,11 +218,15 @@ const App = (function(){
     try {
       const rd = localStorage.getItem(RUNWAYS_KEY);
       if (rd){
-        runways = JSON.parse(rd).map(migrateRunway);
+        try { runways = JSON.parse(rd).map(migrateRunway); }
+        catch(parseErr){
+          console.error('Runways parse failed; data preserved in localStorage:', parseErr);
+          runways = [];
+        }
       } else {
         // First time: migrate existing recent runways into the saved list
         runways = recentRunways.map(r => migrateRunway(JSON.parse(JSON.stringify(r))));
-        saveRunways();
+        if (runways.length) saveRunways();
       }
     } catch(e){ runways = []; }
     selectedToRunwayId = localStorage.getItem(SELECTED_TO_RUNWAY_KEY) || null;
@@ -1014,7 +1028,6 @@ const App = (function(){
   function buildPerfPrint(ac){
     const rTo = perfInput.to_runway;
     const rLd = perfInput.ld_runway;
-    const c = perfInput.conditions;
     const P = window.Performance;
     const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
     const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
@@ -1031,12 +1044,16 @@ const App = (function(){
     });
     const toW = winds[0], ldW = winds[1];
 
-    const paTo = P.pressureAltitude(rTo.elev || 0, c.qnh);
-    const paLd = P.pressureAltitude(rLd.elev || 0, c.qnh);
+    const qnhTo = perfInput.to_qnh ?? 1013;
+    const qnhLd = perfInput.ld_qnh ?? 1013;
+    const paTo = P.pressureAltitude(rTo.elev || 0, qnhTo);
+    const paLd = P.pressureAltitude(rLd.elev || 0, qnhLd);
     const isaTo = P.isaTemp(paTo);
-    const oat = c.oat === null ? isaTo : c.oat;
-    const daTo = P.densityAltitude(paTo, oat);
-    const daLd = P.densityAltitude(paLd, oat);
+    const isaLd = P.isaTemp(paLd);
+    const oatTo = perfInput.to_oat == null ? isaTo : perfInput.to_oat;
+    const oatLd = perfInput.ld_oat == null ? isaLd : perfInput.ld_oat;
+    const daTo = P.densityAltitude(paTo, oatTo);
+    const daLd = P.densityAltitude(paLd, oatLd);
     const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
     const ldWet = (perfInput.ld_condition === 'wet' || perfInput.ld_condition === 'long_grass');
     const opKeyTo = deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface);
@@ -1045,14 +1062,14 @@ const App = (function(){
     let to_result = null, ld_result = null, methodLabel = '';
     if (activeMethod === 'pchart'){
       methodLabel = `P-chart (${pdata.source})${pdata.verified_by ? ' \u2014 verified by ' + pdata.verified_by + (pdata.verified_date ? ' on ' + pdata.verified_date : '') : ''}`;
-      to_result = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toW.headwind, toWet);
+      to_result = P.pchartTakeoffDistance(pdata, paTo, oatTo, opKeyTo, rTo.slope, toW.headwind, toWet);
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldW.headwind, ldWet);
     } else if (activeMethod === 'afm'){
       methodLabel = `Flight Manual + AC91-3 factors (${adata.source})${adata.verified_by ? ' \u2014 verified by ' + adata.verified_by + (adata.verified_date ? ' on ' + adata.verified_date : '') : ''}`;
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
-      to_result = P.afmFactorsTakeoff(afmTo, paTo, oat, rTo.surface, rTo.slope, toW.headwind, toWet);
-      ld_result = P.afmFactorsLanding(afmLd, paLd, oat, rLd.surface, rLd.slope, ldW.headwind, ldWet);
+      to_result = P.afmFactorsTakeoff(afmTo, paTo, oatTo, rTo.surface, rTo.slope, toW.headwind, toWet);
+      ld_result = P.afmFactorsLanding(afmLd, paLd, oatLd, rLd.surface, rLd.slope, ldW.headwind, ldWet);
       if (to_result){ to_result.d_ppd = to_result.distance / (to_result.surf_factor * to_result.slope_factor * to_result.wind_factor * to_result.wet_factor); to_result.op_mult = to_result.surf_factor; }
       if (ld_result){ ld_result.d_ppd = ld_result.distance / (ld_result.surf_factor * ld_result.slope_factor * ld_result.wind_factor * ld_result.wet_factor); ld_result.op_mult = ld_result.surf_factor; }
     }
@@ -1127,9 +1144,9 @@ const App = (function(){
         ${rwyBox('Landing runway', rLd, perfInput.ld_condition, ldW)}
       </div>
       <div style="border:1px solid #999;padding:8px;border-radius:4px;margin-bottom:8px;font-size:9pt">
-        <strong>Atmospheric:</strong> OAT ${fmt0(oat)}°C \u00b7 QNH ${c.qnh} hPa \u00b7
-        T/O: PA ${fmt0(paTo)}\u2032 \u00b7 DA ${fmt0(daTo)}\u2032 \u00b7
-        Landing: PA ${fmt0(paLd)}\u2032 \u00b7 DA ${fmt0(daLd)}\u2032
+        <strong>Atmospheric:</strong>
+        T/O: OAT ${fmt0(oatTo)}°C · QNH ${qnhTo} hPa · PA ${fmt0(paTo)}\u2032 · DA ${fmt0(daTo)}\u2032 \u00b7
+        Landing: OAT ${fmt0(oatLd)}°C · QNH ${qnhLd} hPa · PA ${fmt0(paLd)}\u2032 · DA ${fmt0(daLd)}\u2032
       </div>
       <div style="border:1px solid #999;padding:8px;border-radius:4px;margin-bottom:8px;font-size:9pt">
         <strong>Method:</strong> ${methodLabel || 'none'}${activeMethod === 'pchart' ? ' \u2014 CASO 4 baked into chart' : (activeMethod === 'afm' ? ' \u2014 CASO 4 (AC91-3) factors applied' : '')}
@@ -1204,22 +1221,24 @@ const App = (function(){
       const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
       const method = perfInput.perf_method && ((perfInput.perf_method === 'pchart' && pdata) || (perfInput.perf_method === 'afm' && adata)) ? perfInput.perf_method : (pdata ? 'pchart' : (adata ? 'afm' : null));
       if (method){
-        const c = perfInput.conditions, P = window.Performance;
-        const paTo = P.pressureAltitude(rTo.elev || 0, c.qnh), paLd = P.pressureAltitude(rLd.elev || 0, c.qnh);
-        const oat = c.oat === null ? P.isaTemp(paTo) : c.oat;
+        const P = window.Performance;
+        const qnhTo = perfInput.to_qnh ?? 1013, qnhLd = perfInput.ld_qnh ?? 1013;
+        const paTo = P.pressureAltitude(rTo.elev || 0, qnhTo), paLd = P.pressureAltitude(rLd.elev || 0, qnhLd);
+        const oatTo = perfInput.to_oat == null ? P.isaTemp(paTo) : perfInput.to_oat;
+        const oatLd = perfInput.ld_oat == null ? P.isaTemp(paLd) : perfInput.ld_oat;
         const wTo = perfInput.to_wind, wLd = perfInput.ld_wind;
         const hwTo = wTo.mode === 'dirspeed' ? P.windComponents(rTo.heading, wTo.dir, wTo.speed).headwind : wTo.headwind_component;
         const hwLd = wLd.mode === 'dirspeed' ? P.windComponents(rLd.heading, wLd.dir, wLd.speed).headwind : wLd.headwind_component;
         const toWet = perfInput.to_condition !== 'dry', ldWet = perfInput.ld_condition !== 'dry';
         let tor, ldr;
         if (method === 'pchart'){
-          tor = P.pchartTakeoffDistance(pdata, paTo, oat, deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface), rTo.slope, hwTo, toWet);
+          tor = P.pchartTakeoffDistance(pdata, paTo, oatTo, deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface), rTo.slope, hwTo, toWet);
           ldr = P.pchartLandingDistance(pdata, rLd.elev, deriveOperationKey(perfInput.op_type, perfInput.op_time, rLd.surface), rLd.slope, hwLd, ldWet);
         } else {
           const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
           const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
-          tor = P.afmFactorsTakeoff(afmTo, paTo, oat, rTo.surface, rTo.slope, hwTo, toWet);
-          ldr = P.afmFactorsLanding(afmLd, paLd, oat, rLd.surface, rLd.slope, hwLd, ldWet);
+          tor = P.afmFactorsTakeoff(afmTo, paTo, oatTo, rTo.surface, rTo.slope, hwTo, toWet);
+          ldr = P.afmFactorsLanding(afmLd, paLd, oatLd, rLd.surface, rLd.slope, hwLd, ldWet);
         }
         if (tor && rTo.tora > 0 && tor.distance > rTo.tora) issues.push(`T/O ${tor.distance.toFixed(0)} m exceeds TORA ${rTo.tora} m`);
         if (ldr && rLd.lda > 0 && ldr.distance > rLd.lda) issues.push(`Landing ${ldr.distance.toFixed(0)} m exceeds LDA ${rLd.lda} m`);
@@ -1317,8 +1336,6 @@ const App = (function(){
     if (!ac) return;
     document.getElementById('to-condition').value = perfInput.to_condition || 'dry';
     document.getElementById('ld-condition').value = perfInput.ld_condition || 'dry';
-    document.getElementById('cond-oat').value = perfInput.conditions.oat ?? '';
-    document.getElementById('cond-qnh').value = perfInput.conditions.qnh ?? 1013;
     document.getElementById('perf-op-type').value = perfInput.op_type;
     document.getElementById('perf-op-time').value = perfInput.op_time;
     renderSavedRunwaysPicker('to');
@@ -1436,28 +1453,18 @@ const App = (function(){
   }
 
   function bindPerfHandlers(){
-    const fields = ['to-condition','ld-condition','cond-oat','cond-qnh','perf-op-type','perf-op-time'];
+    const fields = ['to-condition','ld-condition','perf-op-type','perf-op-time'];
     fields.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       el.oninput = onPerfFieldChange;
       el.onchange = onPerfFieldChange;
     });
-    // Validation
-    _attachLimits('cond-oat', {min: -40, max: 55, warnLo: -10, warnHi: 40, warnMsg: 'unusual OAT for NZ'});
-    _attachLimits('cond-qnh', {min: 950, max: 1050, warnLo: 980, warnHi: 1035, warnMsg: 'unusually high/low QNH'});
-    ['to','ld'].forEach(side => {
-      _attachLimits(side + '-wind-dir', {min: 0, max: 360});
-      _attachLimits(side + '-wind-spd', {min: 0, max: 99, warnHi: 40, warnMsg: 'unusually strong wind'});
-    });
   }
 
   function onPerfFieldChange(){
     perfInput.to_condition = document.getElementById('to-condition').value;
     perfInput.ld_condition = document.getElementById('ld-condition').value;
-    const oat_val = document.getElementById('cond-oat').value;
-    perfInput.conditions.oat = oat_val === '' ? null : parseFloat(oat_val);
-    perfInput.conditions.qnh = parseFloat(document.getElementById('cond-qnh').value) || 1013;
     perfInput.op_type = document.getElementById('perf-op-type').value;
     perfInput.op_time = document.getElementById('perf-op-time').value;
     computeAndRenderPerf();
@@ -1477,16 +1484,24 @@ const App = (function(){
     if (!host) return;
     const w = perfInput[k.wind];
     w.mode = 'dirspeed';
+    const oat = perfInput[side + '_oat'];
+    const qnh = perfInput[side + '_qnh'] ?? 1013;
     host.innerHTML = `
-      <div class="row">
-        <div><label>Direction (°M)</label><input type="number" inputmode="decimal" id="${side}-wind-dir" min="0" max="360" step="10" value="${w.dir || ''}"><small class="help">degrees magnetic</small></div>
-        <div><label>Speed (kt)</label><input type="number" inputmode="decimal" id="${side}-wind-spd" min="0" step="1" value="${w.speed || ''}"><small class="help">wind speed in knots</small></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
+        <div><label>Wind dir (°M)</label><input type="number" inputmode="decimal" id="${side}-wind-dir" min="0" max="360" step="10" value="${w.dir || ''}"></div>
+        <div><label>Wind kt</label><input type="number" inputmode="decimal" id="${side}-wind-spd" min="0" step="1" value="${w.speed || ''}"></div>
+        <div><label>OAT (°C)</label><input type="number" inputmode="decimal" id="${side}-oat" step="1" value="${oat ?? ''}" placeholder="15"></div>
+        <div><label>QNH (hPa)</label><input type="number" inputmode="decimal" id="${side}-qnh" step="1" value="${qnh}"></div>
       </div>
     `;
     document.getElementById(side+'-wind-dir').oninput = e => { w.dir = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
     document.getElementById(side+'-wind-spd').oninput = e => { w.speed = parseFloat(e.target.value) || 0; computeAndRenderPerf(); };
+    document.getElementById(side+'-oat').oninput = e => { const v = e.target.value; perfInput[side+'_oat'] = v === '' ? null : parseFloat(v); computeAndRenderPerf(); };
+    document.getElementById(side+'-qnh').oninput = e => { perfInput[side+'_qnh'] = parseFloat(e.target.value) || 1013; computeAndRenderPerf(); };
     _attachLimits(side + '-wind-dir', {min: 0, max: 360});
     _attachLimits(side + '-wind-spd', {min: 0, max: 99, warnHi: 40, warnMsg: 'unusually strong wind'});
+    _attachLimits(side + '-oat', {min: -40, max: 55, warnLo: -10, warnHi: 40, warnMsg: 'unusual OAT for NZ'});
+    _attachLimits(side + '-qnh', {min: 950, max: 1050, warnLo: 980, warnHi: 1035, warnMsg: 'unusually high/low QNH'});
   }
 
   // Compute wind components and a calm-warning HTML snippet for one side
@@ -1518,37 +1533,33 @@ const App = (function(){
     if (!ac) return;
     const rTo = perfInput.to_runway;
     const rLd = perfInput.ld_runway;
-    const c = perfInput.conditions;
     const P = window.Performance;
 
     // Per-side winds
     const toWind = _windFor('to', rTo);
     const ldWind = _windFor('ld', rLd);
 
-    // Atmospheric — use T/O elevation for PA reference (most common); show both ifferent
-    const paTo = P.pressureAltitude(rTo.elev || 0, c.qnh);
-    const paLd = P.pressureAltitude(rLd.elev || 0, c.qnh);
+    // Per-side atmospherics
+    const qnhTo = perfInput.to_qnh ?? 1013;
+    const qnhLd = perfInput.ld_qnh ?? 1013;
+    const paTo = P.pressureAltitude(rTo.elev || 0, qnhTo);
+    const paLd = P.pressureAltitude(rLd.elev || 0, qnhLd);
     const isaTo = P.isaTemp(paTo);
     const isaLd = P.isaTemp(paLd);
-    const oat = c.oat === null ? isaTo : c.oat;  // OAT defaults to T/O ISA if unset
-    const daTo = P.densityAltitude(paTo, oat);
-    const daLd = P.densityAltitude(paLd, oat);
+    const oatToRaw = perfInput.to_oat;
+    const oatLdRaw = perfInput.ld_oat;
+    const oatTo = (oatToRaw === null || oatToRaw === undefined) ? isaTo : oatToRaw;
+    const oatLd = (oatLdRaw === null || oatLdRaw === undefined) ? isaLd : oatLdRaw;
+    const oat = oatTo;  // legacy var used in audit/print summary; T/O is primary
+    const daTo = P.densityAltitude(paTo, oatTo);
+    const daLd = P.densityAltitude(paLd, oatLd);
     const daStrip = document.getElementById('perf-da-strip');
     if (daStrip){
-      const sameElev = (rTo.elev === rLd.elev);
-      if (sameElev){
-        daStrip.innerHTML = `<strong style="color:#d97706">Density Altitude: ${daTo.toFixed(0)}\u2032</strong> &nbsp; PA ${paTo.toFixed(0)}\u2032 · OAT ${oat.toFixed(0)}°C · ISA ${isaTo.toFixed(0)}°C${c.oat===null?' <em style="color:var(--muted)">(using ISA)</em>':''}`;
+      const same = (rTo.elev === rLd.elev) && (qnhTo === qnhLd) && (oatTo === oatLd);
+      if (same){
+        daStrip.innerHTML = `<strong style="color:#d97706">Density Altitude: ${daTo.toFixed(0)}\u2032</strong> &nbsp; PA ${paTo.toFixed(0)}\u2032 · OAT ${oatTo.toFixed(0)}°C · ISA ${isaTo.toFixed(0)}°C${oatToRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}`;
       } else {
-        daStrip.innerHTML = `<strong style="color:#d97706">DA: T/O ${daTo.toFixed(0)}\u2032 · Landing ${daLd.toFixed(0)}\u2032</strong> &nbsp; OAT ${oat.toFixed(0)}°C${c.oat===null?' <em style="color:var(--muted)">(using ISA at T/O elev)</em>':''}`;
-      }
-    }
-    const aiEl = document.getElementById('atmospheric-info');
-    if (aiEl){
-      const sameElev = (rTo.elev === rLd.elev);
-      if (sameElev){
-        aiEl.innerHTML = `PA: <strong>${paTo.toFixed(0)}\u2032</strong> · ISA: <strong>${isaTo.toFixed(0)}°C</strong> · Density Altitude: <strong>${daTo.toFixed(0)}\u2032</strong>${c.oat===null?' <em>(using ISA \u2014 enter OAT to override)</em>':''}`;
-      } else {
-        aiEl.innerHTML = `T/O: PA ${paTo.toFixed(0)}\u2032 · DA ${daTo.toFixed(0)}\u2032 \u00b7 Landing: PA ${paLd.toFixed(0)}\u2032 · DA ${daLd.toFixed(0)}\u2032${c.oat===null?' <em>(using ISA at T/O elev)</em>':''}`;
+        daStrip.innerHTML = `<strong style="color:#d97706">DA: T/O ${daTo.toFixed(0)}\u2032 · Landing ${daLd.toFixed(0)}\u2032</strong> &nbsp; T/O OAT ${oatTo.toFixed(0)}°C · Landing OAT ${oatLd.toFixed(0)}°C`;
       }
     }
 
@@ -1626,14 +1637,14 @@ const App = (function(){
 
     if (activeMethod === 'pchart'){
       methodNote = `Method: <strong>P-chart</strong> \u2014 CASO 4 baked in. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
-      to_result = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toWind.headwind, toWet);
+      to_result = P.pchartTakeoffDistance(pdata, paTo, oatTo, opKeyTo, rTo.slope, toWind.headwind, toWet);
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
     } else if (activeMethod === 'afm'){
       methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong>. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
-      to_result = P.afmFactorsTakeoff(afmTo, paTo, oat, rTo.surface, rTo.slope, toWind.headwind, toWet);
-      ld_result = P.afmFactorsLanding(afmLd, paLd, oat, rLd.surface, rLd.slope, ldWind.headwind, ldWet);
+      to_result = P.afmFactorsTakeoff(afmTo, paTo, oatTo, rTo.surface, rTo.slope, toWind.headwind, toWet);
+      ld_result = P.afmFactorsLanding(afmLd, paLd, oatLd, rLd.surface, rLd.slope, ldWind.headwind, ldWet);
       if (to_result){ to_result.d_ppd = to_result.distance / (to_result.surf_factor * to_result.slope_factor * to_result.wind_factor * to_result.wet_factor); to_result.op_mult = to_result.surf_factor; }
       if (ld_result){ ld_result.d_ppd = ld_result.distance / (ld_result.surf_factor * ld_result.slope_factor * ld_result.wind_factor * ld_result.wet_factor); ld_result.op_mult = ld_result.surf_factor; }
     } else {
@@ -1699,8 +1710,8 @@ const App = (function(){
       }
       // Envelope (chart range) warnings
       const env = activeMethod === 'pchart' ? P.pchartEnvelope(pdata) : (activeMethod === 'afm' ? P.afmEnvelope(adata) : null);
-      const toEnvIssues = P.envelopeStatus(env, paTo, oat, null);
-      const ldEnvIssues = P.envelopeStatus(env, paLd, oat, rLd.elev);
+      const toEnvIssues = P.envelopeStatus(env, paTo, oatTo, null);
+      const ldEnvIssues = P.envelopeStatus(env, paLd, oatLd, rLd.elev);
       if (toEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ T/O outside chart range: ${toEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
       if (ldEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing outside chart range: ${ldEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
 
@@ -1793,6 +1804,23 @@ const App = (function(){
     const fromId = _selId(fromSide);
     if (!fromId){ alert('Select the source runway first.'); return; }
     loadSavedRunway(toSide, fromId);
+  }
+
+  // Copy everything from Takeoff to Landing: runway, condition, wind, OAT, QNH
+  function copyFromTakeoff(){
+    const fromId = _selId('to');
+    if (!fromId){ alert('Select the takeoff runway first.'); return; }
+    // Copy runway + selection
+    _setSelId('ld', fromId);
+    perfInput.ld_runway = JSON.parse(JSON.stringify(perfInput.to_runway));
+    // Copy condition
+    perfInput.ld_condition = perfInput.to_condition;
+    // Copy wind
+    perfInput.ld_wind = JSON.parse(JSON.stringify(perfInput.to_wind));
+    // Copy atmospherics
+    perfInput.ld_oat = perfInput.to_oat;
+    perfInput.ld_qnh = perfInput.to_qnh;
+    renderPerformance();
   }
 
   function reverseRunway(side){
@@ -2216,7 +2244,16 @@ const App = (function(){
       try {
         const data = JSON.parse(ev.target.result);
         const incoming = Array.isArray(data) ? data : data.runways;
-        if (!Array.isArray(incoming)) throw new Error('Invalid format');
+        if (!Array.isArray(incoming)) throw new Error('file is not in runways format (expected an array or {runways:[...]}).');
+        if (incoming.length === 0) throw new Error('file is empty.');
+        const looksLikeRunway = incoming[0] && incoming[0].ident !== undefined && incoming[0].heading !== undefined;
+        const looksLikeAircraft = incoming[0] && (incoming[0].reg !== undefined || incoming[0].stations !== undefined || incoming[0].empty_weight !== undefined);
+        if (looksLikeAircraft && !looksLikeRunway){
+          throw new Error('this looks like an aircraft file. Use "Import aircraft" instead.');
+        }
+        if (!looksLikeRunway){
+          throw new Error('file does not contain runway data (no "ident" or "heading" fields found).');
+        }
         closeMenu();
         openPicker({
           title: 'Import runways',
@@ -2675,7 +2712,17 @@ const App = (function(){
     reader.onload = ev => {
       try {
         const data = JSON.parse(ev.target.result);
-        if (!Array.isArray(data)) throw new Error('not an array');
+        if (!Array.isArray(data)) throw new Error('file is not a JSON array');
+        if (data.length === 0) throw new Error('file is empty');
+        // Shape check: aircraft should have reg + stations + envelope (or at least empty_weight)
+        const looksLikeAircraft = data[0] && (data[0].reg !== undefined || data[0].mtow !== undefined || data[0].stations !== undefined || data[0].empty_weight !== undefined);
+        const looksLikeRunway = data[0] && data[0].ident !== undefined && data[0].heading !== undefined;
+        if (looksLikeRunway && !looksLikeAircraft){
+          throw new Error('this looks like a runways file. Use "Import runways" instead.');
+        }
+        if (!looksLikeAircraft){
+          throw new Error('file does not contain aircraft data (no "reg" or "mtow" fields found).');
+        }
         closeMenu();
         openPicker({
           title: 'Import aircraft',
@@ -2707,10 +2754,14 @@ const App = (function(){
     e.target.value = '';
   }
   function restoreDefaults(){
-    if (!confirm('Replace your fleet with the default sample aircraft? Your current configurations will be lost.')) return;
-    fleet = JSON.parse(JSON.stringify(DEFAULT_FLEET));
-    selectedId = fleet[0].id;
-    save(); saveSelected(); closeMenu(); renderAll();
+    if (!confirm('Clear all aircraft? Your current configurations will be lost.')) return;
+    fleet = [];
+    selectedId = null;
+    save();
+    localStorage.removeItem(SELECTED_KEY);
+    closeMenu();
+    renderAll();
+    alert('All aircraft cleared.');
   }
 
   function openMenu(){ document.getElementById('menu-modal').classList.remove('hidden'); }
@@ -2770,7 +2821,7 @@ const App = (function(){
     exportData, importData, restoreDefaults, closeMenu,
     saveScenario, loadScenario, deleteScenario,
     printSheet,
-    setWindMode, setPerfMethod, loadSavedRunway, reverseRunway, copyRunway,
+    setWindMode, setPerfMethod, loadSavedRunway, reverseRunway, copyRunway, copyFromTakeoff,
     newRunway, editCurrentRunway, duplicateCurrentRunway,
     openRunwayConfig, closeRunwayConfig, saveRunwayConfig, saveRunwayConfigAsCopy, deleteRunway,
     toggleRwyMenu, closeRwyMenu,
