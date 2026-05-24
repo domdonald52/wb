@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v53';
+  const APP_VERSION = 'wb-v54';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1584,17 +1584,12 @@ const App = (function(){
     const oatLdRaw = perfInput.ld_oat;
     const oatTo = (oatToRaw === null || oatToRaw === undefined) ? isaTo : oatToRaw;
     const oatLd = (oatLdRaw === null || oatLdRaw === undefined) ? isaLd : oatLdRaw;
-    const oat = oatTo;  // legacy var used in audit/print summary; T/O is primary
+    const oat = oatTo;
     const daTo = P.densityAltitude(paTo, oatTo);
     const daLd = P.densityAltitude(paLd, oatLd);
-    const daStrip = document.getElementById('perf-da-strip');
-    if (daStrip){
-      const same = (rTo.elev === rLd.elev) && (qnhTo === qnhLd) && (oatTo === oatLd);
-      if (same){
-        daStrip.innerHTML = `<strong style="color:#d97706">Density Altitude: ${daTo.toFixed(0)}\u2032</strong> &nbsp; PA ${paTo.toFixed(0)}\u2032 · OAT ${oatTo.toFixed(0)}°C · ISA ${isaTo.toFixed(0)}°C${oatToRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}`;
-      } else {
-        daStrip.innerHTML = `<strong style="color:#d97706">DA: T/O ${daTo.toFixed(0)}\u2032 · Landing ${daLd.toFixed(0)}\u2032</strong> &nbsp; T/O OAT ${oatTo.toFixed(0)}°C · Landing OAT ${oatLd.toFixed(0)}°C`;
-      }
+    const padaTo = document.getElementById('to-pada');
+    if (padaTo){
+      padaTo.innerHTML = `<strong style="color:#d97706">Pressure Altitude: ${paTo.toFixed(0)}\u2032</strong> \u00b7 <strong style="color:#d97706">Density Altitude: ${daTo.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatTo.toFixed(0)}°C \u00b7 ISA ${isaTo.toFixed(0)}°C${oatToRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}`;
     }
 
     const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
@@ -1694,24 +1689,36 @@ const App = (function(){
     } else {
       const stat = (label, distance, available, ok, sub, altDistance) => {
         const margin = available > 0 ? (1 - distance/available) * 100 : null;
-        const cls = available > 0 ? (ok ? 'ok' : 'bad') : 'warn';
-        const marginChip = margin != null
-          ? ` <span style="font-size:13px;font-weight:600;padding:2px 8px;border-radius:10px;background:${ok?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.15)'};color:${ok?'#16a34a':'#dc2626'};margin-left:6px">${ok?'+':'\u2212'}${Math.abs(margin).toFixed(0)}%</span>`
-          : '';
-        const lo = Math.round(distance * 0.9);
         const hi = Math.round(distance * 1.1);
+        const lo = Math.round(distance * 0.9);
+        const caution = available > 0 && ok && hi > available; // within tolerance band of limit
+        const cls = available > 0 ? (ok ? (caution ? 'warn' : 'ok') : 'bad') : 'warn';
+        const chipColor = ok
+          ? (caution ? '#d97706' : '#16a34a')
+          : '#dc2626';
+        const chipBg = ok
+          ? (caution ? 'rgba(217,119,6,0.18)' : 'rgba(22,163,74,0.15)')
+          : 'rgba(220,38,38,0.15)';
+        const marginChip = margin != null
+          ? ` <span style="font-size:13px;font-weight:600;padding:2px 8px;border-radius:10px;background:${chipBg};color:${chipColor};margin-left:6px">${ok?'+':'\u2212'}${Math.abs(margin).toFixed(0)}%</span>`
+          : '';
         let altRow = '';
         if (altDistance != null){
           const which = activeMethod === 'pchart' ? 'FM+CASO 4' : 'P-chart';
           const useTheBigger = Math.max(distance, altDistance);
           altRow = `<div style="font-size:11px;color:var(--muted);margin-top:2px">${which}: ${altDistance.toFixed(0)} m \u2014 plan for the larger: <strong>${useTheBigger.toFixed(0)} m</strong></div>`;
         }
+        let statusLine;
+        if (available <= 0) statusLine = `no ${sub} entered`;
+        else if (!ok) statusLine = `\u2717 NO-GO \u2014 exceeds ${sub} ${available} m by ${(distance - available).toFixed(0)} m`;
+        else if (caution) statusLine = `\u26a0 CAUTION \u2014 upper tolerance (${hi} m) exceeds ${sub} ${available} m`;
+        else statusLine = `\u2713 GO \u2014 ${sub} ${available} m`;
         return `
           <div class="stat ${cls}" style="margin-bottom:8px">
             <div class="l">${label}</div>
             <div class="v">${distance.toFixed(0)} m${marginChip}</div>
             <div class="s">~${lo}\u2013${hi} m (\u00b110% tolerance)</div>
-            <div class="s">${available > 0 ? (ok ? `\u2713 GO \u2014 ${sub} ${available} m` : `\u2717 NO-GO \u2014 exceeds ${sub} ${available} m by ${(distance - available).toFixed(0)} m`) : `no ${sub} entered`}</div>
+            <div class="s">${statusLine}</div>
             ${altRow}
           </div>`;
       };
@@ -2039,12 +2046,12 @@ const App = (function(){
   function runwayConfigForm(rw){
     return `
       <div class="row">
-        <div style="flex:2"><label>Designator</label><input type="text" id="rcfg-ident" value="${rw.ident||''}" placeholder="e.g. NZWN 16"><small class="help">ICAO + direction</small></div>
+        <div style="flex:2"><label>Designator</label><input type="text" id="rcfg-ident" value="${rw.ident||''}" placeholder="e.g. NZWN 16"></div>
         <div><label>Heading (°M)</label><input type="number" inputmode="decimal" id="rcfg-hdg" min="0" max="360" step="1" value="${rw.heading ?? ''}" placeholder="160"></div>
       </div>
       <div class="row">
         <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rcfg-elev" min="-1000" max="14000" step="1" value="${rw.elev ?? ''}" placeholder="41"></div>
-        <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rcfg-slope" min="-15" max="15" step="0.1" value="${rw.slope ?? ''}" placeholder="-0.7"><small class="help">+ uphill, − downhill (T/O dir)</small></div>
+        <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rcfg-slope" min="-15" max="15" step="0.1" value="${rw.slope ?? ''}" placeholder="-0.7"></div>
       </div>
       <div class="row">
         <div><label>TORA (m)</label><input type="number" inputmode="decimal" id="rcfg-tora" min="50" max="5000" step="1" value="${rw.tora ?? ''}" placeholder="1936"></div>
@@ -2060,12 +2067,11 @@ const App = (function(){
             <option value="coral" ${rw.surface==='coral'?'selected':''}>Coral</option>
           </select>
         </div>
-        <div><label>Aerodrome Group (NZ)</label>
+        <div><label>Runway Grp</label>
           <select id="rcfg-group">
             <option value="">— not set —</option>
             ${[1,2,3,4,5,6,7,8].map(g => `<option value="${g}" ${rw.group===g?'selected':''}>${g}</option>`).join('')}
           </select>
-          <small class="help">from AIP (AC139-7)</small>
         </div>
       </div>
     `;
@@ -2471,33 +2477,39 @@ const App = (function(){
     document.getElementById('cfg-units').onchange = e => {
       const oldUnits = a.units;
       const newUnits = e.target.value;
+      // Sync any pending UI edits into 'a' before we regenerate the form
+      _syncConfigFormToAircraft(a);
       if (oldUnits !== newUnits){
         const toMetric = (newUnits === 'metric');
-        const kw = toMetric ? 0.4535924 : 1/0.4535924;    // lb→kg or kg→lb
-        const ka = toMetric ? 25.4 : 1/25.4;              // in→mm or mm→in
-        const kv = toMetric ? 3.785412 : 1/3.785412;      // gal→L or L→gal
-        const kf = toMetric ? (1/(1/0.4535924 * 3.785412)) : (1/0.4535924 * 3.785412); // lb/gal ↔ kg/L (1 lb/gal ≈ 0.1198 kg/L)
-        a.empty_weight = +(a.empty_weight * kw).toFixed(1);
-        a.empty_arm    = +(a.empty_arm    * ka).toFixed(1);
-        a.mtow         = Math.round(a.mtow * kw);
-        if (a.mlw) a.mlw = Math.round(a.mlw * kw);
-        if (a.mzfw) a.mzfw = Math.round(a.mzfw * kw);
-        a.usable_fuel  = +(a.usable_fuel  * kv).toFixed(1);
-        if (a.fuel_total !== undefined) a.fuel_total = +(a.fuel_total * kv).toFixed(1);
-        if (a.fuel_unusable !== undefined) a.fuel_unusable = +(a.fuel_unusable * kv).toFixed(1);
-        a.fuel_arm     = +(a.fuel_arm     * ka).toFixed(1);
-        a.burn_rate    = +(a.burn_rate    * kv).toFixed(1);
+        const kw = toMetric ? 0.4535924 : 1/0.4535924;
+        const ka = toMetric ? 25.4 : 1/25.4;
+        const kv = toMetric ? 3.785412 : 1/3.785412;
+        const r1 = v => v == null ? v : +(v).toFixed(1);
+        a.empty_weight = r1(a.empty_weight * kw);
+        a.empty_arm    = r1(a.empty_arm    * ka);
+        a.mtow         = r1(a.mtow * kw);
+        if (a.mlw)  a.mlw  = r1(a.mlw  * kw);
+        if (a.mzfw) a.mzfw = r1(a.mzfw * kw);
+        a.usable_fuel  = r1(a.usable_fuel * kv);
+        if (a.fuel_total !== undefined && a.fuel_total !== null) a.fuel_total = r1(a.fuel_total * kv);
+        if (a.fuel_unusable !== undefined && a.fuel_unusable !== null) a.fuel_unusable = r1(a.fuel_unusable * kv);
+        a.fuel_arm     = r1(a.fuel_arm * ka);
+        a.burn_rate    = r1(a.burn_rate * kv);
         a.stations.forEach(s => {
-          s.arm = +(s.arm * ka).toFixed(1);
-          if (s.max) s.max = Math.round(s.max * kw);
-          if (s.min) s.min = Math.round(s.min * kw);
-          if (s.default) s.default = Math.round(s.default * kw);
+          s.arm = r1(s.arm * ka);
+          if (s.max != null) s.max = r1(s.max * kw);
+          if (s.min != null) s.min = r1(s.min * kw);
+          if (s.default != null) s.default = r1(s.default * kw);
         });
         a.envelope.forEach(p => {
-          p.w = Math.round(p.w * kw);
-          p.fwd = +(p.fwd * ka).toFixed(1);
-          p.aft = +(p.aft * ka).toFixed(1);
+          p.w   = r1(p.w * kw);
+          p.fwd = r1(p.fwd * ka);
+          p.aft = r1(p.aft * ka);
         });
+        // station_groups have weight maxes in the current units
+        if (Array.isArray(a.station_groups)){
+          a.station_groups.forEach(g => { if (g.max != null) g.max = r1(g.max * kw); });
+        }
       }
       a.units = newUnits;
       document.getElementById('config-body').innerHTML = configForm(a);
@@ -2680,6 +2692,45 @@ const App = (function(){
     a.envelope.splice(idx, 1);
     renderEnvEditor(a);
   }
+  function _syncConfigFormToAircraft(a){
+    const g = id => document.getElementById(id);
+    const v = id => g(id) ? g(id).value : '';
+    const n = id => parseFloat(v(id));
+    if (g('cfg-reg')) a.reg = v('cfg-reg') || a.reg;
+    if (g('cfg-type')) a.type = v('cfg-type') || a.type;
+    if (g('cfg-fdens')){
+      const fd = n('cfg-fdens');
+      if (!isNaN(fd)){
+        if (a.units === 'metric') a.fuel_kg_per_litre = fd;
+        else a.fuel_lb_per_gal = fd;
+      }
+    }
+    if (g('cfg-ew')) a.empty_weight = isNaN(n('cfg-ew')) ? a.empty_weight : n('cfg-ew');
+    if (g('cfg-ea')) a.empty_arm = isNaN(n('cfg-ea')) ? a.empty_arm : n('cfg-ea');
+    if (g('cfg-mtow')) a.mtow = isNaN(n('cfg-mtow')) ? a.mtow : n('cfg-mtow');
+    if (g('cfg-mlw')){ const x = n('cfg-mlw'); a.mlw = isNaN(x) ? a.mlw : x; }
+    if (g('cfg-mzfw')){ const x = n('cfg-mzfw'); a.mzfw = isNaN(x) ? null : x; }
+    if (g('cfg-reserve')) a.reserve_minutes = isNaN(n('cfg-reserve')) ? (a.reserve_minutes || 30) : n('cfg-reserve');
+    if (g('cfg-uf-total')){
+      const ft = isNaN(n('cfg-uf-total')) ? (a.fuel_total ?? 0) : n('cfg-uf-total');
+      const fu = isNaN(n('cfg-uf-unusable')) ? (a.fuel_unusable ?? 0) : n('cfg-uf-unusable');
+      a.fuel_total = ft;
+      a.fuel_unusable = fu;
+      a.usable_fuel = Math.max(0, ft - fu);
+    }
+    if (g('cfg-fa')) a.fuel_arm = isNaN(n('cfg-fa')) ? a.fuel_arm : n('cfg-fa');
+    if (g('cfg-burn')) a.burn_rate = isNaN(n('cfg-burn')) ? a.burn_rate : n('cfg-burn');
+    if (g('cfg-pchart')) a.pchart_id = v('cfg-pchart') || null;
+    if (g('cfg-afm')) a.afm_id = v('cfg-afm') || null;
+    if (g('cfg-xw-demo')){ const x = n('cfg-xw-demo'); a.crosswind_demonstrated_kt = isNaN(x) ? null : x; }
+    if (g('cfg-xw-club')){ const x = n('cfg-xw-club'); a.crosswind_club_kt = isNaN(x) ? null : x; }
+    if (g('cfg-group')){
+      const gv = v('cfg-group');
+      a.group = gv === '' ? null : parseInt(gv, 10);
+    }
+    // Stations and envelope editors auto-sync via their own oninput handlers.
+  }
+
   function saveConfig(){
     const a = window._editingAircraft;
     a.reg = document.getElementById('cfg-reg').value || 'G-NEW';

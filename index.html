@@ -243,13 +243,17 @@
     </div>
 
     <div id="perf-cards" class="hidden">
-      <div id="perf-da-strip" style="background:var(--panel-2);padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:13px;font-variant-numeric:tabular-nums;border-left:3px solid #d97706"></div>
       <div class="card">
         <h2>Takeoff <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
           <select id="saved-to-rwy-select" onchange="App.loadSavedRunway('to', this.value)" style="flex:1"><option value="">— select a runway —</option></select>
           <button class="icon-btn" onclick="App.reverseRunway('to')" title="Select the reciprocal runway from saved list" aria-label="Reverse runway">↔</button>
           <button class="icon-btn" id="to-rwy-menu-btn" onclick="App.toggleRwyMenu('to', event)" title="Runway options" aria-label="Runway options">⚙</button>
+          <select id="to-condition" style="flex:0 0 110px" title="Surface condition">
+            <option value="dry">Dry</option>
+            <option value="wet">Wet</option>
+            <option value="long_grass">Long grass</option>
+          </select>
         </div>
         <div id="to-rwy-menu" class="ac-menu hidden" style="margin-top:-6px;margin-bottom:8px">
           <button onclick="App.editCurrentRunway('to'); App.closeRwyMenu('to');">Edit this runway…</button>
@@ -258,20 +262,10 @@
           <button onclick="App.openManageRunways(); App.closeRwyMenu('to');">Manage all runways…</button>
         </div>
         <div id="to-rwy-summary" style="font-size:12px;color:var(--muted);line-height:1.6;padding:8px;background:var(--panel-2);border-radius:6px;margin-bottom:8px"></div>
-        <div class="row">
-          <div><label>Condition</label>
-            <select id="to-condition">
-              <option value="dry">Dry</option>
-              <option value="wet">Wet</option>
-              <option value="long_grass">Long grass</option>
-            </select>
-          </div>
-          <div></div>
-        </div>
-        <hr style="margin:10px 0">
         <label>Wind &amp; atmospherics at takeoff</label>
         <div id="to-wind-inputs"></div>
         <div id="to-wind-components" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>
+        <div id="to-pada" style="background:var(--panel-2);padding:6px 10px;border-radius:6px;margin-top:8px;font-size:12px;font-variant-numeric:tabular-nums;border-left:3px solid #d97706"></div>
       </div>
 
       <div class="card">
@@ -281,6 +275,11 @@
           <select id="saved-ld-rwy-select" onchange="App.loadSavedRunway('ld', this.value)" style="flex:1"><option value="">— select a runway —</option></select>
           <button class="icon-btn" onclick="App.reverseRunway('ld')" title="Select the reciprocal runway from saved list" aria-label="Reverse runway">↔</button>
           <button class="icon-btn" id="ld-rwy-menu-btn" onclick="App.toggleRwyMenu('ld', event)" title="Runway options" aria-label="Runway options">⚙</button>
+          <select id="ld-condition" style="flex:0 0 110px" title="Surface condition">
+            <option value="dry">Dry</option>
+            <option value="wet">Wet (+15%)</option>
+            <option value="long_grass">Long grass</option>
+          </select>
         </div>
         <div id="ld-rwy-menu" class="ac-menu hidden" style="margin-top:-6px;margin-bottom:8px">
           <button onclick="App.editCurrentRunway('ld'); App.closeRwyMenu('ld');">Edit this runway…</button>
@@ -289,17 +288,6 @@
           <button onclick="App.openManageRunways(); App.closeRwyMenu('ld');">Manage all runways…</button>
         </div>
         <div id="ld-rwy-summary" style="font-size:12px;color:var(--muted);line-height:1.6;padding:8px;background:var(--panel-2);border-radius:6px;margin-bottom:8px"></div>
-        <div class="row">
-          <div><label>Condition</label>
-            <select id="ld-condition">
-              <option value="dry">Dry</option>
-              <option value="wet">Wet (+15% landing)</option>
-              <option value="long_grass">Long grass (treat as wet)</option>
-            </select>
-          </div>
-          <div></div>
-        </div>
-        <hr style="margin:10px 0">
         <label>Wind &amp; atmospherics at landing</label>
         <div id="ld-wind-inputs"></div>
         <div id="ld-wind-components" style="font-size:11px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums"></div>

@@ -83,13 +83,11 @@ The app is offered as-is with no warranty. The Pilot-in-Command is responsible f
 
 ## Coming next (discussed)
 
-- **T/O and landing performance estimation** — per-aircraft takeoff and landing distance estimates with corrections for pressure altitude, temperature, weight, headwind/tailwind, slope, and surface. To be tackled per-aircraft as adding a "performance" section to the config; the calculation will use the POH chart points you supply rather than a generic formula.
+
 - **Shared/central aircraft configs across devices** — separate discussion. Several routes (free Firebase/Supabase database, a GitHub-hosted JSON file the app pulls on launch, a tiny custom backend, or a "club admin exports + others import" workflow). The right answer depends on how many people will edit configs vs read them and how often the empty weights change.
 
 ## Other possible enhancements
 
-- Density altitude calculator (input: airfield elevation, QNH, OAT — output: density altitude, useful as an input to the performance feature above).
-- A "trim" indicator showing how close to the fwd/aft limits you are as a percentage.
 - Crew database (pilot names with weights) so you can pick "Tom + Sarah" instead of typing kg.
-- Alternative airport / diversion modelling within multi-leg planning.
 - Audit log (which pilot calculated W&B for which flight, with date/time) for club records.
+- Per-aircraft additional performance data for more types as the club fleet grows.
