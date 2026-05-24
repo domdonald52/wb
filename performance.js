@@ -164,20 +164,63 @@ window.Performance = (function(){
     }
   }
 
+  // Bilinear interpolation/extrapolation over a PA × OAT grid.
+  // points = [{pa, t, d}, ...] in metres. Returns the interpolated distance.
+  // For the FM tabular case we expect a full rectangular grid.
+  function _bilin(points, pa_ft, oat_c){
+    if (!points || !points.length) return null;
+    const pas = [...new Set(points.map(p => p.pa))].sort((a,b)=>a-b);
+    const ts  = [...new Set(points.map(p => p.t))].sort((a,b)=>a-b);
+    // Find bracketing PA and OAT (clamp to grid edges for safety; we report extrapolation via envelope warnings elsewhere)
+    function bracket(arr, x){
+      if (x <= arr[0]) return [arr[0], arr[1] || arr[0]];
+      if (x >= arr[arr.length-1]) return [arr[arr.length-2] || arr[arr.length-1], arr[arr.length-1]];
+      for (let i=0; i<arr.length-1; i++) if (x >= arr[i] && x <= arr[i+1]) return [arr[i], arr[i+1]];
+      return [arr[0], arr[arr.length-1]];
+    }
+    const [pa0, pa1] = bracket(pas, pa_ft);
+    const [t0, t1] = bracket(ts, oat_c);
+    const get = (pa, t) => {
+      const p = points.find(pt => pt.pa === pa && pt.t === t);
+      return p ? p.d : null;
+    };
+    const d00 = get(pa0, t0), d01 = get(pa0, t1), d10 = get(pa1, t0), d11 = get(pa1, t1);
+    if (d00 == null || d01 == null || d10 == null || d11 == null) return null;
+    // OAT interp at pa0 and pa1
+    const ft = (t1 === t0) ? 0 : (oat_c - t0) / (t1 - t0);
+    const d_pa0 = d00 + (d01 - d00) * ft;
+    const d_pa1 = d10 + (d11 - d10) * ft;
+    const fp = (pa1 === pa0) ? 0 : (pa_ft - pa0) / (pa1 - pa0);
+    return d_pa0 + (d_pa1 - d_pa0) * fp;
+  }
+
   // --- AFM+factors fallback ---
   function afmFactorsTakeoff(ac_afm, pa_ft, oat_c, surface, slope_pct, wind_kt, wet){
-    // ac_afm = { to_base_msl_isa_m, to_pa_correction_pct_per_1000, to_temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg, mtow_kg, current_weight_kg }
+    // ac_afm = { to_base_msl_isa_m, to_pa_correction_pct_per_1000, to_temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg, mtow_kg, current_weight_kg, takeoff_table (optional, with optional takeoff_table_alt for second weight) }
     if (!ac_afm) return null;
-    const isa_at_pa = 15 - 1.98 * (pa_ft / 1000);
-    let d = ac_afm.to_base_msl_isa_m;
-    d *= 1 + (ac_afm.to_pa_correction_pct_per_1000 / 100) * (pa_ft / 1000);
-    d *= 1 + (ac_afm.to_temp_correction_pct_per_10c / 100) * ((oat_c - isa_at_pa) / 10);
-    // Weight: less weight, less distance. Only applied when actual T/O weight is known
-    // (current_takeoff_weight_kg, falling back to legacy current_weight_kg).
-    const cw_to = ac_afm.current_takeoff_weight_kg || ac_afm.current_weight_kg;
-    if (cw_to && ac_afm.mtow_kg && ac_afm.to_weight_correction_pct_per_100kg){
-      const weight_diff_kg = cw_to - ac_afm.mtow_kg;
-      d *= 1 + (ac_afm.to_weight_correction_pct_per_100kg / 100) * (weight_diff_kg / 100);
+    let d;
+    // If a tabular FM is provided, prefer it (chart-accurate). Otherwise fall back to linear coefficients.
+    if (ac_afm.takeoff_table && ac_afm.takeoff_table.length){
+      d = _bilin(ac_afm.takeoff_table, pa_ft, oat_c);
+      // Weight interpolation: if a second-weight table is given AND we know current weight, blend.
+      const cw_to = ac_afm.current_takeoff_weight_kg || ac_afm.current_weight_kg;
+      if (cw_to && ac_afm.takeoff_table_alt && ac_afm.takeoff_table_alt.length && ac_afm.takeoff_table_alt_weight_kg && ac_afm.mtow_kg){
+        const d_alt = _bilin(ac_afm.takeoff_table_alt, pa_ft, oat_c);
+        const wA = ac_afm.mtow_kg, wB = ac_afm.takeoff_table_alt_weight_kg;
+        // Linear blend in weight: clamp to range [wB, wA]
+        const f = Math.max(0, Math.min(1, (wA - cw_to) / (wA - wB)));
+        d = d * (1 - f) + d_alt * f;
+      }
+    } else {
+      const isa_at_pa = 15 - 1.98 * (pa_ft / 1000);
+      d = ac_afm.to_base_msl_isa_m;
+      d *= 1 + (ac_afm.to_pa_correction_pct_per_1000 / 100) * (pa_ft / 1000);
+      d *= 1 + (ac_afm.to_temp_correction_pct_per_10c / 100) * ((oat_c - isa_at_pa) / 10);
+      const cw_to = ac_afm.current_takeoff_weight_kg || ac_afm.current_weight_kg;
+      if (cw_to && ac_afm.mtow_kg && ac_afm.to_weight_correction_pct_per_100kg){
+        const weight_diff_kg = cw_to - ac_afm.mtow_kg;
+        d *= 1 + (ac_afm.to_weight_correction_pct_per_100kg / 100) * (weight_diff_kg / 100);
+      }
     }
     // Surface
     const surf_factor = (SURFACE_FACTORS_AC91[surface] || SURFACE_FACTORS_AC91.paved).to;
@@ -186,7 +229,6 @@ window.Performance = (function(){
     const slope_factor = 1 + (slope_pct * 5 / 100);
     d *= slope_factor;
     // Wind: 1.5% per HW kt, 6% per TW kt (matches CASO-baked P-chart factors).
-    // AC91-3's "use 50% HW / 150% TW" reduction is already baked into these % constants.
     let wind_factor;
     if (wind_kt >= 0){
       wind_factor = 1 - 0.015 * Math.min(wind_kt, 20);
@@ -194,24 +236,34 @@ window.Performance = (function(){
       wind_factor = 1 + 0.06 * Math.min(-wind_kt, 5);
     }
     d *= wind_factor;
-    // Wet: AC91-3 says +15% for prudent T/O on wet
     if (wet) d *= 1.15;
     return { distance: d, surf_factor, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function afmFactorsLanding(ac_afm, pa_ft, oat_c, surface, slope_pct, wind_kt, wet){
     if (!ac_afm) return null;
-    const isa_at_pa = 15 - 1.98 * (pa_ft / 1000);
-    let d = ac_afm.ld_base_msl_isa_m;
-    d *= 1 + (ac_afm.ld_pa_correction_pct_per_1000 / 100) * (pa_ft / 1000);
-    d *= 1 + (ac_afm.ld_temp_correction_pct_per_10c / 100) * ((oat_c - isa_at_pa) / 10);
-    if (ac_afm.current_landing_weight_kg && ac_afm.mtow_kg && ac_afm.ld_weight_correction_pct_per_100kg){
-      const weight_diff_kg = ac_afm.current_landing_weight_kg - ac_afm.mtow_kg;
-      d *= 1 + (ac_afm.ld_weight_correction_pct_per_100kg / 100) * (weight_diff_kg / 100);
+    let d;
+    if (ac_afm.landing_table && ac_afm.landing_table.length){
+      d = _bilin(ac_afm.landing_table, pa_ft, oat_c);
+      // Optional weight interpolation
+      if (ac_afm.current_landing_weight_kg && ac_afm.landing_table_alt && ac_afm.landing_table_alt.length && ac_afm.landing_table_alt_weight_kg && ac_afm.mtow_kg){
+        const d_alt = _bilin(ac_afm.landing_table_alt, pa_ft, oat_c);
+        const wA = ac_afm.mtow_kg, wB = ac_afm.landing_table_alt_weight_kg;
+        const f = Math.max(0, Math.min(1, (wA - ac_afm.current_landing_weight_kg) / (wA - wB)));
+        d = d * (1 - f) + d_alt * f;
+      }
+    } else {
+      const isa_at_pa = 15 - 1.98 * (pa_ft / 1000);
+      d = ac_afm.ld_base_msl_isa_m;
+      d *= 1 + (ac_afm.ld_pa_correction_pct_per_1000 / 100) * (pa_ft / 1000);
+      d *= 1 + (ac_afm.ld_temp_correction_pct_per_10c / 100) * ((oat_c - isa_at_pa) / 10);
+      if (ac_afm.current_landing_weight_kg && ac_afm.mtow_kg && ac_afm.ld_weight_correction_pct_per_100kg){
+        const weight_diff_kg = ac_afm.current_landing_weight_kg - ac_afm.mtow_kg;
+        d *= 1 + (ac_afm.ld_weight_correction_pct_per_100kg / 100) * (weight_diff_kg / 100);
+      }
     }
     const surf_factor = (SURFACE_FACTORS_AC91[surface] || SURFACE_FACTORS_AC91.paved).ld;
     d *= surf_factor;
-    // LD slope: downhill = longer
     const slope_factor = 1 - (slope_pct * 5 / 100);
     d *= slope_factor;
     let wind_factor;
