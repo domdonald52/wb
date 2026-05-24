@@ -6,6 +6,7 @@ const ASSETS = [
   './performance.js',
   './perf-pa38.js',
   './perf-c172n.js',
+  './perf-c152.js',
   './chart.umd.min.js',
   './manifest.webmanifest',
   './icon-192.png',
