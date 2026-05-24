@@ -172,9 +172,11 @@ window.Performance = (function(){
     let d = ac_afm.to_base_msl_isa_m;
     d *= 1 + (ac_afm.to_pa_correction_pct_per_1000 / 100) * (pa_ft / 1000);
     d *= 1 + (ac_afm.to_temp_correction_pct_per_10c / 100) * ((oat_c - isa_at_pa) / 10);
-    // Weight: less weight, less distance (typically -1% per 100 kg or so)
-    if (ac_afm.current_weight_kg && ac_afm.mtow_kg && ac_afm.to_weight_correction_pct_per_100kg){
-      const weight_diff_kg = ac_afm.current_weight_kg - ac_afm.mtow_kg;
+    // Weight: less weight, less distance. Only applied when actual T/O weight is known
+    // (current_takeoff_weight_kg, falling back to legacy current_weight_kg).
+    const cw_to = ac_afm.current_takeoff_weight_kg || ac_afm.current_weight_kg;
+    if (cw_to && ac_afm.mtow_kg && ac_afm.to_weight_correction_pct_per_100kg){
+      const weight_diff_kg = cw_to - ac_afm.mtow_kg;
       d *= 1 + (ac_afm.to_weight_correction_pct_per_100kg / 100) * (weight_diff_kg / 100);
     }
     // Surface
