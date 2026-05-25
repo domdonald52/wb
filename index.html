@@ -270,7 +270,7 @@
 
       <div class="card">
         <h2>Landing <span style="color:var(--warn);font-weight:600;font-size:11px;text-transform:none;letter-spacing:normal;margin-left:6px">⚠ Verify against current AIP</span></h2>
-        <button class="btn secondary" onclick="App.copyFromTakeoff()" style="width:100%;margin-bottom:10px;padding:8px;font-size:13px" title="Copy runway, condition, wind &amp; atmospherics from Takeoff">⤓ Copy all from Takeoff</button>
+        <button class="btn secondary" onclick="App.copyFromTakeoff()" style="width:100%;margin-bottom:10px;padding:8px;font-size:13px;background:transparent;border:1.5px solid #d97706;color:#d97706;font-weight:600" title="Copy runway, condition, wind &amp; atmospherics from Takeoff">⤓ Copy all from Takeoff</button>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
           <select id="saved-ld-rwy-select" onchange="App.loadSavedRunway('ld', this.value)" style="flex:1"><option value="">— select a runway —</option></select>
           <button class="icon-btn" onclick="App.reverseRunway('ld')" title="Select the reciprocal runway from saved list" aria-label="Reverse runway">↔</button>

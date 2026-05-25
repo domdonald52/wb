@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v60';
+  const APP_VERSION = 'wb-v61';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1611,11 +1611,11 @@ const App = (function(){
     const wbSource = wbW.tow != null ? '<em style="color:var(--muted)">from W&amp;B</em>' : '<em style="color:var(--muted)">assumed MTOW (no W&amp;B)</em>';
     const padaTo = document.getElementById('to-pada');
     if (padaTo){
-      padaTo.innerHTML = `<strong>Pressure Alt: ${paTo.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daTo.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatTo.toFixed(0)}°C \u00b7 ISA ${isaTo.toFixed(0)}°C${oatToRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}<br><strong>T/O weight: ${towKg.toFixed(0)} kg</strong> ${wbSource}`;
+      padaTo.innerHTML = `<strong>Pressure Alt: ${paTo.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daTo.toFixed(0)}\u2032</strong> \u00b7 <strong>T/O weight: ${towKg.toFixed(0)} kg</strong> ${wbSource}`;
     }
     const padaLd = document.getElementById('ld-pada');
     if (padaLd){
-      padaLd.innerHTML = `<strong>Pressure Alt: ${paLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daLd.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatLd.toFixed(0)}°C \u00b7 ISA ${isaLd.toFixed(0)}°C${oatLdRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}<br><strong>Landing weight: ${ldwKg.toFixed(0)} kg</strong> ${wbSource}`;
+      padaLd.innerHTML = `<strong>Pressure Alt: ${paLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Landing weight: ${ldwKg.toFixed(0)} kg</strong> ${wbSource}`;
     }
 
     const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
@@ -1696,12 +1696,20 @@ const App = (function(){
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
     } else if (activeMethod === 'afm'){
       methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong>. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
-      // FM mode warning: AC91-3 has no night CASO factor; grass uses generic surface factor.
-      // P-chart includes operator-specific night/grass margins that FM mode does not replicate.
+      // FM charts assume paved/dry; AC91-3 surface and wet factors are applied on top.
+      // The only legitimate gap is night ops — AC91-3 has no night CASO equivalent,
+      // unlike the P-chart's operator-specific night safety margins.
       const grassUsed = (rTo.surface === 'grass' || rLd.surface === 'grass');
-      if (grassUsed){
-        methodNote += `<div style="margin-top:6px;padding:6px 8px;background:rgba(217,119,6,0.12);border-left:3px solid #d97706;font-size:11px;color:var(--text)">\u26a0 <strong>FM mode does not include NZ operator-specific night/grass CASO safety margins.</strong> AC91-3 applies a generic surface factor only. For night ops or grass operations, use P-chart mode where available, or add your own safety margin.</div>`;
+      const wetUsed = perfInput.to_condition === 'wet' || perfInput.ld_condition === 'wet' || perfInput.to_condition === 'long_grass' || perfInput.ld_condition === 'long_grass';
+      if (grassUsed || wetUsed){
+        const adjustments = [];
+        if (grassUsed) adjustments.push('grass surface factor');
+        if (wetUsed) adjustments.push('wet surface +15%');
+        methodNote += `<div style="margin-top:6px;padding:6px 8px;background:rgba(94,177,255,0.10);border-left:3px solid var(--accent);font-size:11px;color:var(--text)">FM raw distances assume paved &amp; dry. AC91-3 corrections applied on top: ${adjustments.join(', ')}. <em style="color:var(--muted)">(See "About this performance data" for factor values.)</em></div>`;
       }
+      // Night ops have no AC91-3 equivalent margin — only P-chart adds operator-specific night factors.
+      // We don't currently model time-of-day in inputs, so this warning is informational only.
+      methodNote += `<div style="margin-top:4px;padding:4px 8px;background:rgba(217,119,6,0.10);border-left:3px solid #d97706;font-size:11px;color:var(--text)">\u26a0 FM mode does <strong>not</strong> apply night-ops safety margins (AC91-3 has no night CASO factor). For night operations, use P-chart mode if available, or add your own margin.</div>`;
       const wbW = _wbWeights(ac);
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow, takeoff_table: adata.takeoff_table, takeoff_table_alt: adata.takeoff_table_alt, takeoff_table_alt_weight_kg: adata.takeoff_table_alt_weight_kg };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw, landing_table: adata.landing_table, landing_table_alt: adata.landing_table_alt, landing_table_alt_weight_kg: adata.landing_table_alt_weight_kg };
