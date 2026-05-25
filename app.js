@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v62';
+  const APP_VERSION = 'wb-v63';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -489,12 +489,15 @@ const App = (function(){
     if (m) m.classList.add('hidden');
   }
 
-  function openManageAircraft(){
+  let _backToMenuAfterManageAc = false;
+  function openManageAircraft(fromMenu){
+    _backToMenuAfterManageAc = !!fromMenu;
     renderManageList();
     document.getElementById('manage-modal').classList.remove('hidden');
   }
   function closeManageAircraft(){
     document.getElementById('manage-modal').classList.add('hidden');
+    if (_backToMenuAfterManageAc){ _backToMenuAfterManageAc = false; openMenu(); }
   }
   function renderManageList(){
     const host = document.getElementById('manage-list');
@@ -1520,13 +1523,16 @@ const App = (function(){
     if (!host) return;
     const w = perfInput[k.wind];
     w.mode = 'dirspeed';
-    const oat = perfInput[side + '_oat'];
+    const oat = perfInput[side + '_oat'] ?? 15;
     const qnh = perfInput[side + '_qnh'] ?? 1013;
+    // Persist defaults so calc uses them too
+    if (perfInput[side + '_oat'] == null) perfInput[side + '_oat'] = 15;
+    if (perfInput[side + '_qnh'] == null) perfInput[side + '_qnh'] = 1013;
     host.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
         <div><label>Wind dir (°M)</label><input type="number" inputmode="decimal" id="${side}-wind-dir" min="0" max="360" step="10" value="${w.dir || ''}"></div>
         <div><label>Wind kt</label><input type="number" inputmode="decimal" id="${side}-wind-spd" min="0" step="1" value="${w.speed || ''}"></div>
-        <div><label>OAT (°C)</label><input type="number" inputmode="decimal" id="${side}-oat" step="1" value="${oat ?? ''}" placeholder="15"></div>
+        <div><label>OAT (°C)</label><input type="number" inputmode="decimal" id="${side}-oat" step="1" value="${oat}"></div>
         <div><label>QNH (hPa)</label><input type="number" inputmode="decimal" id="${side}-qnh" step="1" value="${qnh}"></div>
       </div>
     `;
@@ -1554,11 +1560,27 @@ const App = (function(){
     const wcEl = document.getElementById(k.windCompId);
     if (wcEl){
       if (w.mode === 'dirspeed' && w.speed > 0){
-        wcEl.innerHTML = `→ Headwind: <strong>${headwind.toFixed(1)} kt</strong> · Crosswind: <strong>${crosswind.toFixed(1)} kt</strong>`;
+        // Crosswind pill: green (within club), amber (over club but within demo), red (over demo)
+        const ac = fleet.find(a => a.id === selectedId);
+        const demo = ac && ac.crosswind_demonstrated_kt;
+        const club = ac && ac.crosswind_club_kt;
+        let pill = '';
+        const xw = Math.abs(crosswind);
+        if (club && demo){
+          if (xw <= club) pill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(22,163,74,0.18);color:#16a34a;margin-left:6px" title="within club limit ${club} kt">\u2713 ${club} kt club</span>`;
+          else if (xw <= demo) pill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(217,119,6,0.18);color:#d97706;margin-left:6px" title="over club ${club} kt, within demo ${demo} kt">\u26a0 over ${club} kt club</span>`;
+          else pill = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.18);color:#dc2626;margin-left:6px" title="exceeds demo ${demo} kt">\u2717 NO-GO exceeds ${demo} kt demo</span>`;
+        } else if (club || demo){
+          const lim = club || demo;
+          const what = club ? 'club' : 'demo';
+          if (xw <= lim) pill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(22,163,74,0.18);color:#16a34a;margin-left:6px">\u2713 ${lim} kt ${what}</span>`;
+          else pill = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.18);color:#dc2626;margin-left:6px">\u2717 exceeds ${lim} kt ${what}</span>`;
+        }
+        wcEl.innerHTML = `\u2192 Headwind: <strong>${headwind.toFixed(1)} kt</strong> \u00b7 Crosswind: <strong>${crosswind.toFixed(1)} kt</strong>${pill}`;
       } else if (w.mode === 'component' && w.headwind_component !== 0){
         wcEl.innerHTML = '';
       } else {
-        wcEl.innerHTML = `<span style="color:var(--warn)">⚠ No wind entered — calculation assumes calm. Confirm against ATIS/METAR.</span>`;
+        wcEl.innerHTML = `<span style="color:var(--warn)">\u26a0 No wind entered \u2014 calculation assumes calm. Confirm against ATIS/METAR.</span>`;
       }
     }
     return { headwind, crosswind, mode: w.mode, speed: w.speed };
@@ -1640,7 +1662,7 @@ const App = (function(){
         ['pchart','afm'].forEach(m => {
           const btn = document.getElementById('method-' + m);
           const isActive = activeMethod === m;
-          btn.style.background = isActive ? '#d97706' : '';
+          btn.style.background = isActive ? '#14b8a6' : '';
           btn.style.color = isActive ? '#fff' : '';
           btn.disabled = false;
           btn.style.opacity = '1';
@@ -1650,7 +1672,7 @@ const App = (function(){
         ['pchart','afm'].forEach(m => {
           const btn = document.getElementById('method-' + m);
           const isActive = activeMethod === m;
-          btn.style.background = isActive ? '#d97706' : '';
+          btn.style.background = isActive ? '#14b8a6' : '';
           btn.style.color = isActive ? '#fff' : '';
           btn.style.opacity = isActive ? '1' : '0.4';
           btn.disabled = !isActive;
@@ -1691,12 +1713,11 @@ const App = (function(){
     if (opCard) opCard.classList.toggle('hidden', activeMethod !== 'pchart');
 
     if (activeMethod === 'pchart'){
-      methodNote = `Method: <strong>P-chart</strong> \u2014 CASO 4 baked in. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
+      methodNote = '';
       to_result = P.pchartTakeoffDistance(pdata, paTo, oatTo, opKeyTo, rTo.slope, toWind.headwind, toWet, _wbWeights(ac).tow);
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
     } else if (activeMethod === 'afm'){
-      methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong>. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
-      methodNote += `<div style="margin-top:6px;padding:6px 8px;background:rgba(217,119,6,0.10);border-left:3px solid #d97706;font-size:11px;color:var(--text)">\u26a0 FM mode does not apply night-ops safety margins (AC91-3 has no night CASO factor). Use P-chart for night ops.</div>`;
+      methodNote = '';
       const wbW = _wbWeights(ac);
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow, takeoff_table: adata.takeoff_table, takeoff_table_alt: adata.takeoff_table_alt, takeoff_table_alt_weight_kg: adata.takeoff_table_alt_weight_kg };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw, landing_table: adata.landing_table, landing_table_alt: adata.landing_table_alt, landing_table_alt_weight_kg: adata.landing_table_alt_weight_kg };
@@ -1711,43 +1732,45 @@ const App = (function(){
     const host = document.getElementById('perf-results');
     if (activeMethod === 'none'){
       host.innerHTML =
-        `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
+        (methodNote ? `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` : "") +
         `<div class="banner warn" style="margin:0">No performance data computed for this aircraft. Set a P-chart or Flight Manual data source in the aircraft configuration.</div>`;
       document.getElementById('perf-breakdown').innerHTML = '';
     } else {
-      const stat = (label, distance, available, ok, sub, altDistance, weightNote) => {
-        const margin = available > 0 ? (1 - distance/available) * 100 : null;
+      const stat = (label, distance, available, ok, sub, altDistance, weightNote, casoNote) => {
+        const pctOfLimit = available > 0 ? (distance / available) * 100 : null;
         const hi = Math.round(distance * 1.1);
         const lo = Math.round(distance * 0.9);
         const caution = available > 0 && ok && hi > available; // within tolerance band of limit
         const cls = available > 0 ? (ok ? (caution ? 'warn' : 'ok') : 'bad') : 'warn';
-        const chipColor = ok
-          ? (caution ? '#d97706' : '#16a34a')
-          : '#dc2626';
-        const chipBg = ok
-          ? (caution ? 'rgba(217,119,6,0.18)' : 'rgba(22,163,74,0.15)')
-          : 'rgba(220,38,38,0.15)';
-        const marginChip = margin != null
-          ? ` <span style="font-size:13px;font-weight:600;padding:2px 8px;border-radius:10px;background:${chipBg};color:${chipColor};margin-left:6px">${ok?'+':'\u2212'}${Math.abs(margin).toFixed(0)}%</span>`
+        const chipColor = ok ? (caution ? '#d97706' : '#16a34a') : '#dc2626';
+        const chipBg = ok ? (caution ? 'rgba(217,119,6,0.18)' : 'rgba(22,163,74,0.15)') : 'rgba(220,38,38,0.15)';
+        const pctChip = pctOfLimit != null
+          ? `<span title="of available ${sub}" style="font-size:12px;font-weight:600;padding:2px 7px;border-radius:10px;background:${chipBg};color:${chipColor}">${pctOfLimit.toFixed(0)}% ${sub}</span>`
           : '';
+        let goChip;
+        if (available <= 0) goChip = `<span style="font-size:12px;color:var(--muted)">no ${sub} entered</span>`;
+        else if (!ok) goChip = `<span style="font-size:12px;font-weight:700;color:#dc2626">\u2717 NO-GO</span>`;
+        else if (caution) goChip = `<span style="font-size:12px;font-weight:700;color:#d97706">\u26a0 CAUTION</span>`;
+        else goChip = `<span style="font-size:12px;font-weight:700;color:#16a34a">\u2713 GO</span>`;
+        const overshoot = (!ok && available > 0) ? `<div class="s" style="color:#dc2626;font-size:11px">Exceeds ${sub} by ${(distance - available).toFixed(0)} m</div>` : '';
         let altRow = '';
         if (altDistance != null){
           const which = activeMethod === 'pchart' ? 'FM+CASO 4' : 'P-chart';
           const useTheBigger = Math.max(distance, altDistance);
           altRow = `<div style="font-size:11px;color:var(--muted);margin-top:2px">${which}: ${altDistance.toFixed(0)} m \u2014 plan for the larger: <strong>${useTheBigger.toFixed(0)} m</strong></div>`;
         }
-        let statusLine;
-        if (available <= 0) statusLine = `no ${sub} entered`;
-        else if (!ok) statusLine = `\u2717 NO-GO \u2014 exceeds ${sub} ${available} m by ${(distance - available).toFixed(0)} m`;
-        else if (caution) statusLine = `\u26a0 CAUTION \u2014 upper tolerance (${hi} m) exceeds ${sub} ${available} m`;
-        else statusLine = `\u2713 GO \u2014 ${sub} ${available} m`;
         return `
           <div class="stat ${cls}" style="margin-bottom:8px">
             <div class="l">${label}</div>
-            <div class="v">${distance.toFixed(0)} m${marginChip}</div>
-            <div class="s">~${lo}\u2013${hi} m (\u00b110% tolerance)</div>
-            <div class="s">${statusLine}</div>
-            ${weightNote ? `<div class="s" style="color:var(--muted);font-size:10px;margin-top:2px">${weightNote}</div>` : ''}
+            <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+              <span class="v" style="font-size:22px;font-weight:700">${distance.toFixed(0)} m</span>
+              <span style="font-size:11px;color:var(--muted)">(${lo}\u2013${hi})</span>
+              ${pctChip}
+              ${goChip}
+            </div>
+            ${overshoot}
+            ${weightNote ? `<div class="s" style="color:var(--muted);font-size:10px;margin-top:3px">${weightNote}</div>` : ''}
+            ${casoNote ? `<div class="s" style="color:var(--muted);font-size:10px">${casoNote}</div>` : ''}
             ${altRow}
           </div>`;
       };
@@ -1795,36 +1818,30 @@ const App = (function(){
         </div>`;
       }
 
-      // Compose weight-handling note for each card
+      // Compose weight + CASO notes per side
       const wbW2 = _wbWeights(ac);
       const hasToWtData = (activeMethod === 'pchart' && Array.isArray(pdata && pdata.takeoff_weight_multipliers) && pdata.takeoff_weight_multipliers.length)
                        || (activeMethod === 'afm' && adata && (adata.takeoff_table_alt || (adata.takeoff && adata.takeoff.weight_correction_pct_per_100kg)));
       const hasLdWtData = (activeMethod === 'afm' && adata && (adata.landing_table_alt || (adata.landing && adata.landing.weight_correction_pct_per_100kg)));
-      let toWtNote = hasToWtData
-        ? (wbW2.tow != null ? `T/O weight: ${wbW2.tow.toFixed(0)} kg (from W&B)` : `T/O weight: ${ac.mtow.toFixed(0)} kg MTOW (no W&B \u2014 worst case)`)
-        : `Assumes MTOW (${ac.mtow.toFixed(0)} kg) \u2014 chart has no weight correction`;
-      let ldWtNote = hasLdWtData
-        ? (wbW2.ldw != null ? `Landing weight: ${wbW2.ldw.toFixed(0)} kg (from W&B)` : `Landing weight: ${ac.mtow.toFixed(0)} kg MTOW (no W&B \u2014 worst case)`)
-        : `Assumes MTOW (${ac.mtow.toFixed(0)} kg) \u2014 chart has no weight correction`;
-      // In FM mode, append a per-side note about AC91-3 corrections only when grass or wet applies on that side
-      if (activeMethod === 'afm'){
-        const toAdj = [];
-        if (rTo.surface === 'grass') toAdj.push('grass surface factor');
-        if (perfInput.to_condition === 'wet') toAdj.push('wet surface +15%');
-        if (toAdj.length) toWtNote += ` \u00b7 FM data assumes paved &amp; dry; AC91-3 corrections applied on top: ${toAdj.join(', ')}.`;
-        const ldAdj = [];
-        if (rLd.surface === 'grass') ldAdj.push('grass surface factor');
-        if (perfInput.ld_condition === 'wet') ldAdj.push('wet surface +15%');
-        if (ldAdj.length) ldWtNote += ` \u00b7 FM data assumes paved &amp; dry; AC91-3 corrections applied on top: ${ldAdj.join(', ')}.`;
-      }
+      const toWtNote = hasToWtData
+        ? `Weight: ${(wbW2.tow != null ? wbW2.tow : ac.mtow).toFixed(0)} kg${wbW2.tow == null ? ' (MTOW \u2014 no W&amp;B)' : ''}`
+        : `Weight: MTOW assumed \u2014 chart has no weight factor`;
+      const ldWtNote = hasLdWtData
+        ? `Weight: ${(wbW2.ldw != null ? wbW2.ldw : ac.mtow).toFixed(0)} kg${wbW2.ldw == null ? ' (MTOW \u2014 no W&amp;B)' : ''}`
+        : `Weight: MTOW assumed \u2014 chart has no weight factor`;
+      // CASO factors line: grass / wet, only shown when applicable
+      const toFactors = []; if (rTo.surface === 'grass') toFactors.push('Grass'); if (perfInput.to_condition === 'wet') toFactors.push('Wet');
+      const ldFactors = []; if (rLd.surface === 'grass') ldFactors.push('Grass'); if (perfInput.ld_condition === 'wet') ldFactors.push('Wet');
+      const toCaso = toFactors.length ? `CASO factors: ${toFactors.join(', ')}` : '';
+      const ldCaso = ldFactors.length ? `CASO factors: ${ldFactors.join(', ')}` : '';
 
       host.innerHTML =
-        `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
+        (methodNote ? `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` : "") +
         chartNotes +
         windWarning +
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
-        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote) +
-        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote) +
+        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote, toCaso) +
+        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCaso) +
         `</div>`;
 
       const fmt2 = x => x.toFixed(3);
@@ -1848,11 +1865,13 @@ const App = (function(){
 
     renderPerfAudit(activeMethod, pdata, adata);
 
-    // Crosswind — show one block with T/O and Landing rows
-    const demoXW = ac.crosswind_demonstrated_kt;
-    const clubXW = ac.crosswind_club_kt;
-    const limit = (demoXW && clubXW) ? Math.min(demoXW, clubXW) : (demoXW || clubXW || null);
+    // Crosswind card removed in v63 — pill now shown inline next to wind components.
+    // Tailwind warnings still useful; render them inline below results if any.
     const xwHost = document.getElementById('perf-crosswind');
+    if (xwHost){
+      const demoXW = ac.crosswind_demonstrated_kt;
+      const clubXW = ac.crosswind_club_kt;
+      const limit = (demoXW && clubXW) ? Math.min(demoXW, clubXW) : (demoXW || clubXW || null);
     let xwHtml = '';
 
     const xwRow = (label, runway, w) => {
@@ -1890,7 +1909,8 @@ const App = (function(){
     xwHtml += tailwindBlock('T/O', rTo, toWind, _selId('to'));
     xwHtml += tailwindBlock('Landing', rLd, ldWind, _selId('ld'));
 
-    xwHost.innerHTML = xwHtml;
+      xwHost.innerHTML = xwHtml;
+    }
   }
 
   function copyRunway(fromSide, toSide){
@@ -2285,12 +2305,15 @@ const App = (function(){
     if (m) m.classList.add('hidden');
   }
 
-  function openManageRunways(){
+  let _backToMenuAfterManageRw = false;
+  function openManageRunways(fromMenu){
+    _backToMenuAfterManageRw = !!fromMenu;
     renderManageRunwaysList();
     document.getElementById('manage-runways-modal').classList.remove('hidden');
   }
   function closeManageRunways(){
     document.getElementById('manage-runways-modal').classList.add('hidden');
+    if (_backToMenuAfterManageRw){ _backToMenuAfterManageRw = false; openMenu(); }
   }
   function renderManageRunwaysList(){
     const host = document.getElementById('manage-runways-list');
@@ -3064,6 +3087,8 @@ const App = (function(){
     document.getElementById('btn-menu').onclick = openMenu;
     const vEl = document.getElementById('version-label');
     if (vEl) vEl.textContent = APP_VERSION;
+    const vHdr = document.getElementById('hdr-version');
+    if (vHdr) vHdr.textContent = APP_VERSION.replace(/^wb-/, '');
     renderAll();
     if ('serviceWorker' in navigator){
       navigator.serviceWorker.register('sw.js').catch(()=>{});

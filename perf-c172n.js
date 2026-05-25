@@ -129,7 +129,7 @@ window.AFM_DATA['C172N'] = {
   source: "Cessna 172N POH, 1 July 1979, Section 5 (Figures 5-4, 5-10)",
   verified_by: "D.Donald, Wellington Aero Club",
   verified_date: "2026-05-23",
-  notes_to: "Short field | Flaps 10\u00b0 | Full throttle before brake release | Lean above 3000ft | Total dist to clear 50ft (POH table)",
+  notes_to: "Short field to 50' | Flaps 10\u00b0 | Full throttle before brake release",
   notes_ld: "Short field | Flaps 40\u00b0 | Power off | Max braking | Total dist from 50ft (POH table)",
   mtow_kg: 1043,
   envelope: {pa_max: 8000, oat_max: 40},

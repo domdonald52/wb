@@ -1,7 +1,7 @@
 {
-  "name": "Weight & Balance",
-  "short_name": "W&B",
-  "description": "Aircraft weight and balance calculator for aero clubs",
+  "name": "Within Limits",
+  "short_name": "Within Limits",
+  "description": "Weight, balance and performance for NZ aero clubs",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0b1220",
