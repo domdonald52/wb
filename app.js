@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v56';
+  const APP_VERSION = 'wb-v58';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1604,9 +1604,18 @@ const App = (function(){
     const oat = oatTo;
     const daTo = P.densityAltitude(paTo, oatTo);
     const daLd = P.densityAltitude(paLd, oatLd);
+    // Weights from W&B if entered, else MTOW (worst case)
+    const wbW = _wbWeights(ac);
+    const towKg = wbW.tow != null ? wbW.tow : ac.mtow;
+    const ldwKg = wbW.ldw != null ? wbW.ldw : ac.mtow;
+    const wbSource = wbW.tow != null ? '<em style="color:var(--muted)">from W&amp;B</em>' : '<em style="color:var(--muted)">assumed MTOW (no W&amp;B)</em>';
     const padaTo = document.getElementById('to-pada');
     if (padaTo){
-      padaTo.innerHTML = `<strong style="color:#d97706">Pressure Altitude: ${paTo.toFixed(0)}\u2032</strong> \u00b7 <strong style="color:#d97706">Density Altitude: ${daTo.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatTo.toFixed(0)}°C \u00b7 ISA ${isaTo.toFixed(0)}°C${oatToRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}`;
+      padaTo.innerHTML = `<strong style="color:#d97706">Pressure Alt: ${paTo.toFixed(0)}\u2032</strong> \u00b7 <strong style="color:#d97706">Density Alt: ${daTo.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatTo.toFixed(0)}°C \u00b7 ISA ${isaTo.toFixed(0)}°C${oatToRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}<br><strong style="color:#d97706">T/O weight: ${towKg.toFixed(0)} kg</strong> ${wbSource}`;
+    }
+    const padaLd = document.getElementById('ld-pada');
+    if (padaLd){
+      padaLd.innerHTML = `<strong style="color:#d97706">Pressure Alt: ${paLd.toFixed(0)}\u2032</strong> \u00b7 <strong style="color:#d97706">Density Alt: ${daLd.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatLd.toFixed(0)}°C \u00b7 ISA ${isaLd.toFixed(0)}°C${oatLdRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}<br><strong style="color:#d97706">Landing weight: ${ldwKg.toFixed(0)} kg</strong> ${wbSource}`;
     }
 
     const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
@@ -1687,6 +1696,12 @@ const App = (function(){
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
     } else if (activeMethod === 'afm'){
       methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong>. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
+      // FM mode warning: AC91-3 has no night CASO factor; grass uses generic surface factor.
+      // P-chart includes operator-specific night/grass margins that FM mode does not replicate.
+      const grassUsed = (rTo.surface === 'grass' || rLd.surface === 'grass');
+      if (grassUsed){
+        methodNote += `<div style="margin-top:6px;padding:6px 8px;background:rgba(217,119,6,0.12);border-left:3px solid #d97706;font-size:11px;color:var(--text)">\u26a0 <strong>FM mode does not include NZ operator-specific night/grass CASO safety margins.</strong> AC91-3 applies a generic surface factor only. For night ops or grass operations, use P-chart mode where available, or add your own safety margin.</div>`;
+      }
       const wbW = _wbWeights(ac);
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw };
@@ -1908,20 +1923,28 @@ const App = (function(){
     const cur = runways.find(x => x.id === curId);
     if (!cur || cur.heading == null){ alert('No heading on current runway.'); return; }
     const reciprocalHdg = (cur.heading + 180) % 360;
-    // Match same ICAO prefix and a heading within ±10° of reciprocal
     const prefix = (cur.ident || '').trim().split(/\s+/)[0];
-    const candidate = runways.find(rw => {
+    // All candidates with same ICAO prefix and reciprocal heading (±10°)
+    const candidates = runways.filter(rw => {
       if (rw.id === curId) return false;
       const rwPrefix = (rw.ident || '').trim().split(/\s+/)[0];
       if (rwPrefix !== prefix) return false;
       const diff = Math.abs(((rw.heading - reciprocalHdg + 540) % 360) - 180);
       return diff <= 10;
     });
-    if (!candidate){
+    if (!candidates.length){
       alert(`No reciprocal runway found in saved list for ${cur.ident}. Add one via the ⚙ menu.`);
       return;
     }
-    loadSavedRunway(sd, candidate.id);
+    // Prefer the one with the same surface; otherwise warn and pick the first
+    const sameSurface = candidates.find(rw => rw.surface === cur.surface);
+    const chosen = sameSurface || candidates[0];
+    if (!sameSurface){
+      // No exact surface match — warn the pilot
+      const surfLabel = s => ({paved:'paved',grass:'grass',metal:'metal',rolled_earth:'rolled earth',coral:'coral'})[s]||s||'paved';
+      alert(`No ${surfLabel(cur.surface)} reciprocal for ${cur.ident} \u2014 selected ${chosen.ident} (${surfLabel(chosen.surface)}) instead. Verify before using.`);
+    }
+    loadSavedRunway(sd, chosen.id);
   }
 
   function renderPerfAudit(activeMethod, pdata, adata){
