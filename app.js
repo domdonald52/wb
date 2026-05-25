@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v61';
+  const APP_VERSION = 'wb-v62';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1088,8 +1088,8 @@ const App = (function(){
     const oatLd = perfInput.ld_oat == null ? isaLd : perfInput.ld_oat;
     const daTo = P.densityAltitude(paTo, oatTo);
     const daLd = P.densityAltitude(paLd, oatLd);
-    const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
-    const ldWet = (perfInput.ld_condition === 'wet' || perfInput.ld_condition === 'long_grass');
+    const toWet = (perfInput.to_condition === 'wet');
+    const ldWet = (perfInput.ld_condition === 'wet');
     const opKeyTo = deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface);
     const opKeyLd = deriveOperationKey(perfInput.op_type, perfInput.op_time, rLd.surface);
 
@@ -1112,7 +1112,7 @@ const App = (function(){
     const ld_d = ld_result && ld_result.distance;
 
     const surfLbl = sf => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'})[sf] || sf;
-    const condLbl = cd => ({dry:'Dry', wet:'Wet', long_grass:'Long grass'})[cd] || cd;
+    const condLbl = cd => ({dry:'Dry', wet:'Wet'})[cd] || cd;
     const lineLabels = {private_paved_day:'Private \u2014 Paved \u2014 Day', air_transport_paved_day:'Air Transport \u2014 Paved \u2014 Day', private_grass_day:'Private \u2014 Grass \u2014 Day', air_transport_grass_day:'Air Transport \u2014 Grass \u2014 Day', all_ops_paved_night:'All Ops \u2014 Paved \u2014 Night', all_ops_grass_night:'All Ops \u2014 Grass \u2014 Night'};
     const fmt0 = v => v == null ? '?' : v.toFixed(0);
     const fmt1 = v => v == null ? '?' : v.toFixed(1);
@@ -1618,8 +1618,8 @@ const App = (function(){
       padaLd.innerHTML = `<strong>Pressure Alt: ${paLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Landing weight: ${ldwKg.toFixed(0)} kg</strong> ${wbSource}`;
     }
 
-    const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
-    const ldWet = (perfInput.ld_condition === 'wet' || perfInput.ld_condition === 'long_grass');
+    const toWet = (perfInput.to_condition === 'wet');
+    const ldWet = (perfInput.ld_condition === 'wet');
 
     const pdata = ac.pchart_id && window.PCHART_DATA && window.PCHART_DATA[ac.pchart_id];
     const adata = ac.afm_id && window.AFM_DATA && window.AFM_DATA[ac.afm_id];
@@ -1696,20 +1696,7 @@ const App = (function(){
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
     } else if (activeMethod === 'afm'){
       methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong>. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
-      // FM charts assume paved/dry; AC91-3 surface and wet factors are applied on top.
-      // The only legitimate gap is night ops — AC91-3 has no night CASO equivalent,
-      // unlike the P-chart's operator-specific night safety margins.
-      const grassUsed = (rTo.surface === 'grass' || rLd.surface === 'grass');
-      const wetUsed = perfInput.to_condition === 'wet' || perfInput.ld_condition === 'wet' || perfInput.to_condition === 'long_grass' || perfInput.ld_condition === 'long_grass';
-      if (grassUsed || wetUsed){
-        const adjustments = [];
-        if (grassUsed) adjustments.push('grass surface factor');
-        if (wetUsed) adjustments.push('wet surface +15%');
-        methodNote += `<div style="margin-top:6px;padding:6px 8px;background:rgba(94,177,255,0.10);border-left:3px solid var(--accent);font-size:11px;color:var(--text)">FM raw distances assume paved &amp; dry. AC91-3 corrections applied on top: ${adjustments.join(', ')}. <em style="color:var(--muted)">(See "About this performance data" for factor values.)</em></div>`;
-      }
-      // Night ops have no AC91-3 equivalent margin — only P-chart adds operator-specific night factors.
-      // We don't currently model time-of-day in inputs, so this warning is informational only.
-      methodNote += `<div style="margin-top:4px;padding:4px 8px;background:rgba(217,119,6,0.10);border-left:3px solid #d97706;font-size:11px;color:var(--text)">\u26a0 FM mode does <strong>not</strong> apply night-ops safety margins (AC91-3 has no night CASO factor). For night operations, use P-chart mode if available, or add your own margin.</div>`;
+      methodNote += `<div style="margin-top:6px;padding:6px 8px;background:rgba(217,119,6,0.10);border-left:3px solid #d97706;font-size:11px;color:var(--text)">\u26a0 FM mode does not apply night-ops safety margins (AC91-3 has no night CASO factor). Use P-chart for night ops.</div>`;
       const wbW = _wbWeights(ac);
       const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow, takeoff_table: adata.takeoff_table, takeoff_table_alt: adata.takeoff_table_alt, takeoff_table_alt_weight_kg: adata.takeoff_table_alt_weight_kg };
       const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw, landing_table: adata.landing_table, landing_table_alt: adata.landing_table_alt, landing_table_alt_weight_kg: adata.landing_table_alt_weight_kg };
@@ -1813,12 +1800,23 @@ const App = (function(){
       const hasToWtData = (activeMethod === 'pchart' && Array.isArray(pdata && pdata.takeoff_weight_multipliers) && pdata.takeoff_weight_multipliers.length)
                        || (activeMethod === 'afm' && adata && (adata.takeoff_table_alt || (adata.takeoff && adata.takeoff.weight_correction_pct_per_100kg)));
       const hasLdWtData = (activeMethod === 'afm' && adata && (adata.landing_table_alt || (adata.landing && adata.landing.weight_correction_pct_per_100kg)));
-      const toWtNote = hasToWtData
+      let toWtNote = hasToWtData
         ? (wbW2.tow != null ? `T/O weight: ${wbW2.tow.toFixed(0)} kg (from W&B)` : `T/O weight: ${ac.mtow.toFixed(0)} kg MTOW (no W&B \u2014 worst case)`)
         : `Assumes MTOW (${ac.mtow.toFixed(0)} kg) \u2014 chart has no weight correction`;
-      const ldWtNote = hasLdWtData
+      let ldWtNote = hasLdWtData
         ? (wbW2.ldw != null ? `Landing weight: ${wbW2.ldw.toFixed(0)} kg (from W&B)` : `Landing weight: ${ac.mtow.toFixed(0)} kg MTOW (no W&B \u2014 worst case)`)
         : `Assumes MTOW (${ac.mtow.toFixed(0)} kg) \u2014 chart has no weight correction`;
+      // In FM mode, append a per-side note about AC91-3 corrections only when grass or wet applies on that side
+      if (activeMethod === 'afm'){
+        const toAdj = [];
+        if (rTo.surface === 'grass') toAdj.push('grass surface factor');
+        if (perfInput.to_condition === 'wet') toAdj.push('wet surface +15%');
+        if (toAdj.length) toWtNote += ` \u00b7 FM data assumes paved &amp; dry; AC91-3 corrections applied on top: ${toAdj.join(', ')}.`;
+        const ldAdj = [];
+        if (rLd.surface === 'grass') ldAdj.push('grass surface factor');
+        if (perfInput.ld_condition === 'wet') ldAdj.push('wet surface +15%');
+        if (ldAdj.length) ldWtNote += ` \u00b7 FM data assumes paved &amp; dry; AC91-3 corrections applied on top: ${ldAdj.join(', ')}.`;
+      }
 
       host.innerHTML =
         `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
