@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v58';
+  const APP_VERSION = 'wb-v59';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1101,8 +1101,8 @@ const App = (function(){
     } else if (activeMethod === 'afm'){
       methodLabel = `Flight Manual + AC91-3 factors (${adata.source})${adata.verified_by ? ' \u2014 verified by ' + adata.verified_by + (adata.verified_date ? ' on ' + adata.verified_date : '') : ''}`;
       const wbW = _wbWeights(ac);
-      const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow };
-      const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw };
+      const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow, takeoff_table: adata.takeoff_table, takeoff_table_alt: adata.takeoff_table_alt, takeoff_table_alt_weight_kg: adata.takeoff_table_alt_weight_kg };
+      const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw, landing_table: adata.landing_table, landing_table_alt: adata.landing_table_alt, landing_table_alt_weight_kg: adata.landing_table_alt_weight_kg };
       to_result = P.afmFactorsTakeoff(afmTo, paTo, oatTo, rTo.surface, rTo.slope, toW.headwind, toWet);
       ld_result = P.afmFactorsLanding(afmLd, paLd, oatLd, rLd.surface, rLd.slope, ldW.headwind, ldWet);
       if (to_result){ to_result.d_ppd = to_result.distance / (to_result.surf_factor * to_result.slope_factor * to_result.wind_factor * to_result.wet_factor); to_result.op_mult = to_result.surf_factor; }
@@ -1271,8 +1271,8 @@ const App = (function(){
           ldr = P.pchartLandingDistance(pdata, rLd.elev, deriveOperationKey(perfInput.op_type, perfInput.op_time, rLd.surface), rLd.slope, hwLd, ldWet);
         } else {
           const wbW = _wbWeights(ac);
-          const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow };
-          const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw };
+          const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow, takeoff_table: adata.takeoff_table, takeoff_table_alt: adata.takeoff_table_alt, takeoff_table_alt_weight_kg: adata.takeoff_table_alt_weight_kg };
+          const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw, landing_table: adata.landing_table, landing_table_alt: adata.landing_table_alt, landing_table_alt_weight_kg: adata.landing_table_alt_weight_kg };
           tor = P.afmFactorsTakeoff(afmTo, paTo, oatTo, rTo.surface, rTo.slope, hwTo, toWet);
           ldr = P.afmFactorsLanding(afmLd, paLd, oatLd, rLd.surface, rLd.slope, hwLd, ldWet);
         }
@@ -1703,8 +1703,8 @@ const App = (function(){
         methodNote += `<div style="margin-top:6px;padding:6px 8px;background:rgba(217,119,6,0.12);border-left:3px solid #d97706;font-size:11px;color:var(--text)">\u26a0 <strong>FM mode does not include NZ operator-specific night/grass CASO safety margins.</strong> AC91-3 applies a generic surface factor only. For night ops or grass operations, use P-chart mode where available, or add your own safety margin.</div>`;
       }
       const wbW = _wbWeights(ac);
-      const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow };
-      const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw };
+      const afmTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_takeoff_weight_kg: wbW.tow, takeoff_table: adata.takeoff_table, takeoff_table_alt: adata.takeoff_table_alt, takeoff_table_alt_weight_kg: adata.takeoff_table_alt_weight_kg };
+      const afmLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, current_landing_weight_kg: wbW.ldw, landing_table: adata.landing_table, landing_table_alt: adata.landing_table_alt, landing_table_alt_weight_kg: adata.landing_table_alt_weight_kg };
       to_result = P.afmFactorsTakeoff(afmTo, paTo, oatTo, rTo.surface, rTo.slope, toWind.headwind, toWet);
       ld_result = P.afmFactorsLanding(afmLd, paLd, oatLd, rLd.surface, rLd.slope, ldWind.headwind, ldWet);
       if (to_result){ to_result.d_ppd = to_result.distance / (to_result.surf_factor * to_result.slope_factor * to_result.wind_factor * to_result.wet_factor); to_result.op_mult = to_result.surf_factor; }
@@ -1763,8 +1763,8 @@ const App = (function(){
       if (hasP && hasA){
         if (activeMethod === 'pchart'){
           // Compute FM result as comparison
-          const altTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
-          const altLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: ac.mtow };
+          const altTo = { to_base_msl_isa_m: adata.takeoff.base_msl_isa_m, to_pa_correction_pct_per_1000: adata.takeoff.pa_correction_pct_per_1000, to_temp_correction_pct_per_10c: adata.takeoff.temp_correction_pct_per_10c, to_weight_correction_pct_per_100kg: adata.takeoff.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, takeoff_table: adata.takeoff_table, takeoff_table_alt: adata.takeoff_table_alt, takeoff_table_alt_weight_kg: adata.takeoff_table_alt_weight_kg, current_takeoff_weight_kg: _wbWeights(ac).tow };
+          const altLd = { ld_base_msl_isa_m: adata.landing.base_msl_isa_m, ld_pa_correction_pct_per_1000: adata.landing.pa_correction_pct_per_1000, ld_temp_correction_pct_per_10c: adata.landing.temp_correction_pct_per_10c, ld_weight_correction_pct_per_100kg: adata.landing.weight_correction_pct_per_100kg || 0, mtow_kg: adata.mtow_kg || ac.mtow, landing_table: adata.landing_table, landing_table_alt: adata.landing_table_alt, landing_table_alt_weight_kg: adata.landing_table_alt_weight_kg, current_landing_weight_kg: _wbWeights(ac).ldw };
           const altToR = P.afmFactorsTakeoff(altTo, paTo, oat, rTo.surface, rTo.slope, toWind.headwind, toWet);
           const altLdR = P.afmFactorsLanding(altLd, paLd, oat, rLd.surface, rLd.slope, ldWind.headwind, ldWet);
           alt_to = altToR && altToR.distance;
@@ -2028,21 +2028,27 @@ const App = (function(){
             ['OAT', `${e.oat_min ?? '?'}–${e.oat_max ?? '?'} °C`],
           ];
         })())}
-        <p style="margin:8px 0 2px"><strong>Takeoff base</strong> (MTOW, sea level, ISA, paved, dry, zero wind, zero slope)</p>
-        ${tbl([
-          ['base distance', (t.base_msl_isa_m||'?') + ' m'],
-          ['per 1000\u2032 PA', (t.pa_correction_pct_per_1000||0) + '%'],
-          ['per 10°C above ISA', (t.temp_correction_pct_per_10c||0) + '%'],
-          ['per 100 kg below MTOW', (t.weight_correction_pct_per_100kg||0) + '% (lighter = shorter)'],
-        ])}
+        <p style="margin:8px 0 2px"><strong>Takeoff data</strong></p>
+        ${adata.takeoff_table && adata.takeoff_table.length
+          ? `<p style="font-size:11px;margin:2px 0">Tabular FM (${adata.takeoff_table.length} pts across PA × OAT) \u2014 bilinear interp. ${adata.takeoff_table_alt ? `+ alt-weight table at ${adata.takeoff_table_alt_weight_kg} kg for blend.` : ''}</p>`
+          : tbl([
+            ['base distance @ MTOW/SL/ISA', (t.base_msl_isa_m||'?') + ' m'],
+            ['per 1000\u2032 PA', (t.pa_correction_pct_per_1000||0) + '%'],
+            ['per 10°C above ISA', (t.temp_correction_pct_per_10c||0) + '%'],
+            ['per 100 kg below MTOW', (t.weight_correction_pct_per_100kg||0) + '% (lighter = shorter)'],
+          ])
+        }
 
-        <p style="margin:8px 0 2px"><strong>Landing base</strong></p>
-        ${tbl([
-          ['base distance', (l.base_msl_isa_m||'?') + ' m'],
-          ['per 1000\u2032 PA', (l.pa_correction_pct_per_1000||0) + '%'],
-          ['per 10°C above ISA', (l.temp_correction_pct_per_10c||0) + '%'],
-          ['per 100 kg below MTOW', (l.weight_correction_pct_per_100kg||0) + '%'],
-        ])}
+        <p style="margin:8px 0 2px"><strong>Landing data</strong></p>
+        ${adata.landing_table && adata.landing_table.length
+          ? `<p style="font-size:11px;margin:2px 0">Tabular FM (${adata.landing_table.length} pts across PA × OAT) \u2014 bilinear interp.</p>`
+          : tbl([
+            ['base distance @ MTOW/SL/ISA', (l.base_msl_isa_m||'?') + ' m'],
+            ['per 1000\u2032 PA', (l.pa_correction_pct_per_1000||0) + '%'],
+            ['per 10°C above ISA', (l.temp_correction_pct_per_10c||0) + '%'],
+            ['per 100 kg below MTOW', (l.weight_correction_pct_per_100kg||0) + '%'],
+          ])
+        }
 
         <p style="margin:8px 0 2px"><strong>AC91-3 factors applied on top</strong></p>
         ${tbl([
