@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v63';
+  const APP_VERSION = 'wb-v65';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -783,7 +783,7 @@ const App = (function(){
     // Banner
     const bh = document.getElementById('banner-host');
     if (r.violations.length === 0){
-      bh.innerHTML = `<div class="banner ok">✓ Within all limits for takeoff and landing.</div>`;
+      bh.innerHTML = `<div class="banner ok">\u2713 Within all weight and balance limits for takeoff and landing.</div>`;
     } else {
       bh.innerHTML = `<div class="banner bad">⚠ ${r.violations.length} issue${r.violations.length>1?'s':''}:<br>${r.violations.map(v=>'• '+v).join('<br>')}</div>`;
     }
@@ -1736,7 +1736,7 @@ const App = (function(){
         `<div class="banner warn" style="margin:0">No performance data computed for this aircraft. Set a P-chart or Flight Manual data source in the aircraft configuration.</div>`;
       document.getElementById('perf-breakdown').innerHTML = '';
     } else {
-      const stat = (label, distance, available, ok, sub, altDistance, weightNote, casoNote) => {
+      const stat = (label, distance, available, ok, sub, altDistance, weightNote, casoNote, xwNote) => {
         const pctOfLimit = available > 0 ? (distance / available) * 100 : null;
         const hi = Math.round(distance * 1.1);
         const lo = Math.round(distance * 0.9);
@@ -1771,6 +1771,7 @@ const App = (function(){
             ${overshoot}
             ${weightNote ? `<div class="s" style="color:var(--muted);font-size:10px;margin-top:3px">${weightNote}</div>` : ''}
             ${casoNote ? `<div class="s" style="color:var(--muted);font-size:10px">${casoNote}</div>` : ''}
+            ${xwNote ? `<div class="s" style="font-size:10px;margin-top:2px">${xwNote}</div>` : ''}
             ${altRow}
           </div>`;
       };
@@ -1835,13 +1836,48 @@ const App = (function(){
       const toCaso = toFactors.length ? `CASO factors: ${toFactors.join(', ')}` : '';
       const ldCaso = ldFactors.length ? `CASO factors: ${ldFactors.join(', ')}` : '';
 
+      // Compute crosswind status per side: 0=green, 1=amber, 2=red, -1=no data/limit
+      function xwStatus(w){
+        const xw = Math.abs(w.crosswind || 0);
+        const demo = ac.crosswind_demonstrated_kt, club = ac.crosswind_club_kt;
+        if (!w.speed || w.mode !== 'dirspeed') return { s: -1 };
+        if (club && demo){
+          if (xw <= club) return { s: 0, label: `\u2713 XW ${xw.toFixed(1)} kt within club ${club} kt` };
+          if (xw <= demo) return { s: 1, label: `\u26a0 XW ${xw.toFixed(1)} kt over club ${club} kt, within demo ${demo} kt` };
+          return { s: 2, label: `\u2717 XW ${xw.toFixed(1)} kt exceeds demo ${demo} kt` };
+        }
+        const lim = club || demo;
+        if (!lim) return { s: -1, label: `XW ${xw.toFixed(1)} kt \u2014 no limit set` };
+        const what = club ? 'club' : 'demo';
+        if (xw <= lim) return { s: 0, label: `\u2713 XW ${xw.toFixed(1)} kt within ${lim} kt ${what}` };
+        return { s: 2, label: `\u2717 XW ${xw.toFixed(1)} kt exceeds ${lim} kt ${what}` };
+      }
+      const xwTo = xwStatus(toWind);
+      const xwLd = xwStatus(ldWind);
+      // Crosswind notes appended to card details (item 21)
+      const toXwNote = xwTo.label ? `<span style="color:${xwTo.s===0?'#16a34a':xwTo.s===1?'#d97706':xwTo.s===2?'#dc2626':'var(--muted)'}">${xwTo.label}</span>` : '';
+      const ldXwNote = xwLd.label ? `<span style="color:${xwLd.s===0?'#16a34a':xwLd.s===1?'#d97706':xwLd.s===2?'#dc2626':'var(--muted)'}">${xwLd.label}</span>` : '';
+
+      // Overall summary banner (item 24)
+      const toCaution = rTo.tora > 0 && toOK && to_result.distance * 1.1 > rTo.tora;
+      const ldCaution = rLd.lda > 0 && ldOK && ld_result.distance * 1.1 > rLd.lda;
+      const anyRed = !toOK || !ldOK || xwTo.s === 2 || xwLd.s === 2;
+      const anyAmber = toCaution || ldCaution || xwTo.s === 1 || xwLd.s === 1;
+      let summaryBanner = '';
+      if (rTo.tora > 0 && rLd.lda > 0){
+        if (anyRed) summaryBanner = `<div class="banner bad" style="margin:0 0 8px">\u2717 Performance limits exceeded \u2014 review below.</div>`;
+        else if (anyAmber) summaryBanner = `<div class="banner warn" style="margin:0 0 8px">\u26a0 Within performance limits but with caution \u2014 review below.</div>`;
+        else summaryBanner = `<div class="banner ok" style="margin:0 0 8px">\u2713 Within all performance limits.</div>`;
+      }
+
       host.innerHTML =
+        summaryBanner +
         (methodNote ? `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` : "") +
         chartNotes +
         windWarning +
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
-        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote, toCaso) +
-        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCaso) +
+        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote, toCaso, toXwNote) +
+        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCaso, ldXwNote) +
         `</div>`;
 
       const fmt2 = x => x.toFixed(3);
@@ -2421,10 +2457,34 @@ const App = (function(){
             detail: `${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'}m`,
           })),
           onConfirm: (chosen) => {
-            chosen.forEach(rw => runways.push(migrateRunway({ ...rw, id: 'rwy-' + Math.random().toString(36).slice(2, 9) })));
+            // Detect duplicates: same ident + heading + surface
+            const sig = rw => `${(rw.ident||'').trim().toLowerCase()}|${rw.heading}|${rw.surface||'paved'}`;
+            const dupes = chosen.filter(rw => runways.some(existing => sig(existing) === sig(rw)));
+            let action = 'add'; // default: add all (creates duplicates) — overridden below if any dupes
+            if (dupes.length){
+              const msg = `${dupes.length} of ${chosen.length} runway(s) match existing runways (same ident, heading & surface):\n\n${dupes.slice(0,8).map(rw => '  \u2022 ' + (rw.ident||'?') + ' (' + (rw.surface||'paved') + ')').join('\n')}${dupes.length > 8 ? '\n  \u2026' : ''}\n\nOK = overwrite duplicates with imported data\nCancel = skip duplicates (keep existing)`;
+              action = confirm(msg) ? 'overwrite' : 'skip';
+            }
+            let added = 0, replaced = 0, skipped = 0;
+            chosen.forEach(rw => {
+              const dupIdx = runways.findIndex(existing => sig(existing) === sig(rw));
+              if (dupIdx >= 0){
+                if (action === 'overwrite'){
+                  runways[dupIdx] = migrateRunway({ ...rw, id: runways[dupIdx].id });
+                  replaced++;
+                } else {
+                  skipped++;
+                }
+              } else {
+                runways.push(migrateRunway({ ...rw, id: 'rwy-' + Math.random().toString(36).slice(2, 9) }));
+                added++;
+              }
+            });
             saveRunways();
-            if (mode === 'performance') renderSavedRunwaysPicker();
-            alert(`Imported ${chosen.length} runway(s).`);
+            renderSavedRunwaysPicker('to');
+            renderSavedRunwaysPicker('ld');
+            if (mode === 'performance') renderPerformance();
+            alert(`Imported: ${added} added, ${replaced} overwritten, ${skipped} skipped.`);
           },
         });
       } catch(err){ alert('Import failed: ' + err.message); }
@@ -3017,14 +3077,30 @@ const App = (function(){
             };
           }),
           onConfirm: (chosen) => {
+            const dupes = chosen.filter(a => fleet.some(x => x.reg && x.reg === a.reg));
+            let action = 'add';
+            if (dupes.length){
+              const msg = `${dupes.length} of ${chosen.length} aircraft match existing registrations:\n\n${dupes.slice(0,8).map(a => '  \u2022 ' + (a.reg||'?')).join('\n')}${dupes.length > 8 ? '\n  \u2026' : ''}\n\nOK = overwrite existing\nCancel = skip (keep existing)`;
+              action = confirm(msg) ? 'overwrite' : 'skip';
+            }
+            let added = 0, replaced = 0, skipped = 0;
             chosen.forEach(incoming => {
-              const idx = fleet.findIndex(x => x.reg === incoming.reg);
-              const ac = migrate({ ...incoming, id: idx >= 0 ? fleet[idx].id : ('ac-' + Math.random().toString(36).slice(2, 9)) });
-              if (idx >= 0) fleet[idx] = ac; else fleet.push(ac);
+              const idx = fleet.findIndex(x => x.reg && x.reg === incoming.reg);
+              if (idx >= 0){
+                if (action === 'overwrite'){
+                  fleet[idx] = migrate({ ...incoming, id: fleet[idx].id });
+                  replaced++;
+                } else {
+                  skipped++;
+                }
+              } else {
+                fleet.push(migrate({ ...incoming, id: 'ac-' + Math.random().toString(36).slice(2, 9) }));
+                added++;
+              }
             });
             if (!fleet.find(a => a.id === selectedId)) selectedId = fleet[0] && fleet[0].id || null;
             save(); saveSelected(); closeMenu(); renderAll();
-            alert(`Imported ${chosen.length} aircraft.`);
+            alert(`Imported: ${added} added, ${replaced} overwritten, ${skipped} skipped.`);
           },
         });
       } catch(err){ alert('Import failed: ' + err.message); }
