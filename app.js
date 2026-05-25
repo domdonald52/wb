@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v59';
+  const APP_VERSION = 'wb-v60';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1096,7 +1096,7 @@ const App = (function(){
     let to_result = null, ld_result = null, methodLabel = '';
     if (activeMethod === 'pchart'){
       methodLabel = `P-chart (${pdata.source})${pdata.verified_by ? ' \u2014 verified by ' + pdata.verified_by + (pdata.verified_date ? ' on ' + pdata.verified_date : '') : ''}`;
-      to_result = P.pchartTakeoffDistance(pdata, paTo, oatTo, opKeyTo, rTo.slope, toW.headwind, toWet);
+      to_result = P.pchartTakeoffDistance(pdata, paTo, oatTo, opKeyTo, rTo.slope, toW.headwind, toWet, _wbWeights(ac).tow);
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldW.headwind, ldWet);
     } else if (activeMethod === 'afm'){
       methodLabel = `Flight Manual + AC91-3 factors (${adata.source})${adata.verified_by ? ' \u2014 verified by ' + adata.verified_by + (adata.verified_date ? ' on ' + adata.verified_date : '') : ''}`;
@@ -1267,7 +1267,7 @@ const App = (function(){
         const toWet = perfInput.to_condition !== 'dry', ldWet = perfInput.ld_condition !== 'dry';
         let tor, ldr;
         if (method === 'pchart'){
-          tor = P.pchartTakeoffDistance(pdata, paTo, oatTo, deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface), rTo.slope, hwTo, toWet);
+          tor = P.pchartTakeoffDistance(pdata, paTo, oatTo, deriveOperationKey(perfInput.op_type, perfInput.op_time, rTo.surface), rTo.slope, hwTo, toWet, _wbWeights(ac).tow);
           ldr = P.pchartLandingDistance(pdata, rLd.elev, deriveOperationKey(perfInput.op_type, perfInput.op_time, rLd.surface), rLd.slope, hwLd, ldWet);
         } else {
           const wbW = _wbWeights(ac);
@@ -1611,11 +1611,11 @@ const App = (function(){
     const wbSource = wbW.tow != null ? '<em style="color:var(--muted)">from W&amp;B</em>' : '<em style="color:var(--muted)">assumed MTOW (no W&amp;B)</em>';
     const padaTo = document.getElementById('to-pada');
     if (padaTo){
-      padaTo.innerHTML = `<strong style="color:#d97706">Pressure Alt: ${paTo.toFixed(0)}\u2032</strong> \u00b7 <strong style="color:#d97706">Density Alt: ${daTo.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatTo.toFixed(0)}°C \u00b7 ISA ${isaTo.toFixed(0)}°C${oatToRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}<br><strong style="color:#d97706">T/O weight: ${towKg.toFixed(0)} kg</strong> ${wbSource}`;
+      padaTo.innerHTML = `<strong>Pressure Alt: ${paTo.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daTo.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatTo.toFixed(0)}°C \u00b7 ISA ${isaTo.toFixed(0)}°C${oatToRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}<br><strong>T/O weight: ${towKg.toFixed(0)} kg</strong> ${wbSource}`;
     }
     const padaLd = document.getElementById('ld-pada');
     if (padaLd){
-      padaLd.innerHTML = `<strong style="color:#d97706">Pressure Alt: ${paLd.toFixed(0)}\u2032</strong> \u00b7 <strong style="color:#d97706">Density Alt: ${daLd.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatLd.toFixed(0)}°C \u00b7 ISA ${isaLd.toFixed(0)}°C${oatLdRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}<br><strong style="color:#d97706">Landing weight: ${ldwKg.toFixed(0)} kg</strong> ${wbSource}`;
+      padaLd.innerHTML = `<strong>Pressure Alt: ${paLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daLd.toFixed(0)}\u2032</strong> \u00b7 OAT ${oatLd.toFixed(0)}°C \u00b7 ISA ${isaLd.toFixed(0)}°C${oatLdRaw==null?' <em style="color:var(--muted)">(using ISA)</em>':''}<br><strong>Landing weight: ${ldwKg.toFixed(0)} kg</strong> ${wbSource}`;
     }
 
     const toWet = (perfInput.to_condition === 'wet' || perfInput.to_condition === 'long_grass');
@@ -1692,7 +1692,7 @@ const App = (function(){
 
     if (activeMethod === 'pchart'){
       methodNote = `Method: <strong>P-chart</strong> \u2014 CASO 4 baked in. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
-      to_result = P.pchartTakeoffDistance(pdata, paTo, oatTo, opKeyTo, rTo.slope, toWind.headwind, toWet);
+      to_result = P.pchartTakeoffDistance(pdata, paTo, oatTo, opKeyTo, rTo.slope, toWind.headwind, toWet, _wbWeights(ac).tow);
       ld_result = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
     } else if (activeMethod === 'afm'){
       methodNote = `Method: <strong>Flight Manual + AC91-3 factors</strong>. <span style="color:var(--muted)">See "About this performance data" for source and verification.</span>`;
@@ -1720,7 +1720,7 @@ const App = (function(){
         `<div class="banner warn" style="margin:0">No performance data computed for this aircraft. Set a P-chart or Flight Manual data source in the aircraft configuration.</div>`;
       document.getElementById('perf-breakdown').innerHTML = '';
     } else {
-      const stat = (label, distance, available, ok, sub, altDistance) => {
+      const stat = (label, distance, available, ok, sub, altDistance, weightNote) => {
         const margin = available > 0 ? (1 - distance/available) * 100 : null;
         const hi = Math.round(distance * 1.1);
         const lo = Math.round(distance * 0.9);
@@ -1752,6 +1752,7 @@ const App = (function(){
             <div class="v">${distance.toFixed(0)} m${marginChip}</div>
             <div class="s">~${lo}\u2013${hi} m (\u00b110% tolerance)</div>
             <div class="s">${statusLine}</div>
+            ${weightNote ? `<div class="s" style="color:var(--muted);font-size:10px;margin-top:2px">${weightNote}</div>` : ''}
             ${altRow}
           </div>`;
       };
@@ -1770,7 +1771,7 @@ const App = (function(){
           alt_to = altToR && altToR.distance;
           alt_ld = altLdR && altLdR.distance;
         } else if (activeMethod === 'afm'){
-          const altToR = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toWind.headwind, toWet);
+          const altToR = P.pchartTakeoffDistance(pdata, paTo, oat, opKeyTo, rTo.slope, toWind.headwind, toWet, _wbWeights(ac).tow);
           const altLdR = P.pchartLandingDistance(pdata, rLd.elev, opKeyLd, rLd.slope, ldWind.headwind, ldWet);
           alt_to = altToR && altToR.distance;
           alt_ld = altLdR && altLdR.distance;
@@ -1799,13 +1800,25 @@ const App = (function(){
         </div>`;
       }
 
+      // Compose weight-handling note for each card
+      const wbW2 = _wbWeights(ac);
+      const hasToWtData = (activeMethod === 'pchart' && Array.isArray(pdata && pdata.takeoff_weight_multipliers) && pdata.takeoff_weight_multipliers.length)
+                       || (activeMethod === 'afm' && adata && (adata.takeoff_table_alt || (adata.takeoff && adata.takeoff.weight_correction_pct_per_100kg)));
+      const hasLdWtData = (activeMethod === 'afm' && adata && (adata.landing_table_alt || (adata.landing && adata.landing.weight_correction_pct_per_100kg)));
+      const toWtNote = hasToWtData
+        ? (wbW2.tow != null ? `T/O weight: ${wbW2.tow.toFixed(0)} kg (from W&B)` : `T/O weight: ${ac.mtow.toFixed(0)} kg MTOW (no W&B \u2014 worst case)`)
+        : `Assumes MTOW (${ac.mtow.toFixed(0)} kg) \u2014 chart has no weight correction`;
+      const ldWtNote = hasLdWtData
+        ? (wbW2.ldw != null ? `Landing weight: ${wbW2.ldw.toFixed(0)} kg (from W&B)` : `Landing weight: ${ac.mtow.toFixed(0)} kg MTOW (no W&B \u2014 worst case)`)
+        : `Assumes MTOW (${ac.mtow.toFixed(0)} kg) \u2014 chart has no weight correction`;
+
       host.innerHTML =
         `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` +
         chartNotes +
         windWarning +
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
-        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to) +
-        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld) +
+        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote) +
+        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote) +
         `</div>`;
 
       const fmt2 = x => x.toFixed(3);
@@ -1993,6 +2006,14 @@ const App = (function(){
 
         <p style="margin:8px 0 2px"><strong>Operation line multipliers</strong> (applied to PPD)</p>
         ${tbl(opRows)}
+
+        ${Array.isArray(pdata.takeoff_weight_multipliers) && pdata.takeoff_weight_multipliers.length ? `
+          <p style="margin:8px 0 2px"><strong>T/O weight (P-chart weight box)</strong></p>
+          ${tbl(pdata.takeoff_weight_multipliers.map(p => [p.weight_kg + ' kg', p.mult.toFixed(3) + '\u00d7']))}
+          <p style="font-size:11px;color:var(--muted);margin:2px 0 0">Linear-interpolated between points; clamped at endpoints. Only applied when T/O weight is known from W&amp;B data.</p>
+        ` : `
+          <p style="font-size:11px;color:var(--muted);margin:8px 0 2px"><strong>T/O weight:</strong> chart assumes MTOW (no weight-correction lines digitised). Result does not vary with W&amp;B T/O weight.</p>
+        `}
 
         <p style="margin:8px 0 2px"><strong>Slope</strong></p>
         ${tbl([['per 1% slope', (pdata.slope_factor_pct_per_pct || 0).toFixed(1) + '%']])}

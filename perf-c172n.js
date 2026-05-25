@@ -112,6 +112,15 @@ window.PCHART_DATA['C172N'] = {
     max_headwind_kt: 20,
     max_tailwind_kt: 5,
   },
+  // T/O weight box has three reference lines (2300 lb MTOW, 2100 lb, 1900 lb).
+  // Multipliers averaged across SL/15°C and 2000 ft/30°C readings (within 4% of each other).
+  // Linear-interpolated between points; clamped at endpoints.
+  // Only applied when actual T/O weight is known from W&B data.
+  takeoff_weight_multipliers: [
+    { weight_kg: 1043, mult: 1.000 },  // 2300 lb MTOW
+    { weight_kg: 953,  mult: 0.780 },  // 2100 lb
+    { weight_kg: 862,  mult: 0.613 },  // 1900 lb
+  ],
 };
 
 // Tabular FM data (POH table values, bilinear interpolation)

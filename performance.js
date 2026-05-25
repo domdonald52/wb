@@ -109,7 +109,7 @@ window.Performance = (function(){
     return sorted[sorted.length-1].d;
   }
 
-  function pchartTakeoffDistance(data, pa_ft, oat_c, operation, slope_pct, wind_component_kt, wet){
+  function pchartTakeoffDistance(data, pa_ft, oat_c, operation, slope_pct, wind_component_kt, wet, current_weight_kg){
     let d_ppd;
     if (data.takeoff.reference_points){
       d_ppd = bilinearInterp2D(data.takeoff.reference_points, pa_ft, oat_c);
@@ -121,12 +121,32 @@ window.Performance = (function(){
     }
     const op_mult = (data.operation_multipliers && data.operation_multipliers[operation]) || 1.0;
     let d = d_ppd * op_mult;
+    // Weight multiplier (P-chart weight box). Only applied when current weight is known.
+    // Multipliers are relative to MTOW (1.0×). Linear-interpolated between provided weight points;
+    // clamped at the chart's weight range (i.e. no extrapolation beyond lightest/heaviest line).
+    let weight_mult = 1.0;
+    if (current_weight_kg && Array.isArray(data.takeoff_weight_multipliers) && data.takeoff_weight_multipliers.length){
+      const pts = [...data.takeoff_weight_multipliers].sort((a,b) => a.weight_kg - b.weight_kg);
+      const w = current_weight_kg;
+      if (w <= pts[0].weight_kg) weight_mult = pts[0].mult;
+      else if (w >= pts[pts.length-1].weight_kg) weight_mult = pts[pts.length-1].mult;
+      else {
+        for (let i = 0; i < pts.length - 1; i++){
+          if (w >= pts[i].weight_kg && w <= pts[i+1].weight_kg){
+            const f = (w - pts[i].weight_kg) / (pts[i+1].weight_kg - pts[i].weight_kg);
+            weight_mult = pts[i].mult + (pts[i+1].mult - pts[i].mult) * f;
+            break;
+          }
+        }
+      }
+      d *= weight_mult;
+    }
     const slope_factor = 1 + (slope_pct * data.slope_factor_pct_per_pct / 100);
     d *= slope_factor;
     const wind_factor = computeWindFactor(data, wind_component_kt);
     d *= wind_factor;
     if (wet) d *= 1.15;
-    return { distance: d, d_ppd, op_mult, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, d_ppd, op_mult, weight_mult, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function pchartLandingDistance(data, elev_ft, operation, slope_pct, wind_component_kt, wet){
