@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v70';
+  const APP_VERSION = 'wb-v71';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1761,11 +1761,11 @@ const App = (function(){
       host.innerHTML = '';
       document.getElementById('perf-breakdown').innerHTML = '';
     } else {
-      const stat = (label, distance, available, ok, sub, altDistance, weightNote, casoNote, xwNote) => {
-        const pctOfLimit = available > 0 ? (distance / available) * 100 : null;
+      const stat = (label, distance, available, ok, sub, altDistance, weightNote, casoNote, xwNote, oor) => {
+        const pctOfLimit = (!oor && available > 0) ? (distance / available) * 100 : null;
         const hi = Math.round(distance * 1.1);
         const lo = Math.round(distance * 0.9);
-        const caution = available > 0 && ok && hi > available; // within tolerance band of limit
+        const caution = !oor && available > 0 && ok && hi > available;
         const cls = available > 0 ? (ok ? (caution ? 'warn' : 'ok') : 'bad') : 'warn';
         const chipColor = ok ? (caution ? '#d97706' : '#16a34a') : '#dc2626';
         const chipBg = ok ? (caution ? 'rgba(217,119,6,0.18)' : 'rgba(22,163,74,0.15)') : 'rgba(220,38,38,0.15)';
@@ -1777,9 +1777,12 @@ const App = (function(){
         else if (!ok) goChip = `<span style="font-size:12px;font-weight:700;color:#dc2626">\u2717 NO-GO</span>`;
         else if (caution) goChip = `<span style="font-size:12px;font-weight:700;color:#d97706">\u26a0 CAUTION</span>`;
         else goChip = `<span style="font-size:12px;font-weight:700;color:#16a34a">\u2713 GO</span>`;
-        const overshoot = (!ok && available > 0) ? `<div class="s" style="color:#dc2626;font-size:11px">Exceeds ${sub} by ${(distance - available).toFixed(0)} m</div>` : '';
+        const overshoot = (!oor && !ok && available > 0) ? `<div class="s" style="color:#dc2626;font-size:11px">Exceeds ${sub} by ${(distance - available).toFixed(0)} m</div>` : '';
+        const tolerance = !oor ? `<span style="font-size:11px;color:var(--muted)">(${lo}\u2013${hi})</span>` : '';
+        const distancePrefix = oor ? '\u2265' : '';
+        const distanceLabel = oor ? '<span style="font-size:11px;color:var(--muted);margin-left:4px">(chart floor)</span>' : '';
         let altRow = '';
-        if (altDistance != null){
+        if (!oor && altDistance != null){
           const which = activeMethod === 'pchart' ? 'FM+AC91-3' : 'P-chart';
           const useTheBigger = Math.max(distance, altDistance);
           altRow = `<div style="font-size:11px;color:var(--muted);margin-top:2px">${which}: ${altDistance.toFixed(0)} m \u2014 plan for the larger: <strong>${useTheBigger.toFixed(0)} m</strong></div>`;
@@ -1788,8 +1791,9 @@ const App = (function(){
           <div class="stat ${cls}" style="margin-bottom:8px">
             <div class="l">${label}</div>
             <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
-              <span class="v" style="font-size:22px;font-weight:700">${distance.toFixed(0)} m</span>
-              <span style="font-size:11px;color:var(--muted)">(${lo}\u2013${hi})</span>
+              <span class="v" style="font-size:22px;font-weight:700">${distancePrefix}${distance.toFixed(0)} m</span>
+              ${distanceLabel}
+              ${tolerance}
               ${pctChip}
               ${goChip}
             </div>
@@ -1918,8 +1922,8 @@ const App = (function(){
         chartNotes +
         windWarning +
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
-        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote, toCasoFinal, toXwNote) +
-        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCasoFinal, ldXwNote) +
+        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote, toCasoFinal, toXwNote, !!to_result.wind_out_of_range) +
+        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCasoFinal, ldXwNote, !!ld_result.wind_out_of_range) +
         `</div>`;
 
       const fmt2 = x => x.toFixed(3);
