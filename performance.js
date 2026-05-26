@@ -239,13 +239,19 @@ window.Performance = (function(){
       }
     } else {
       const isa_at_pa = 15 - 1.98 * (pa_ft / 1000);
-      d = ac_afm.to_base_msl_isa_m;
-      d *= 1 + (ac_afm.to_pa_correction_pct_per_1000 / 100) * (pa_ft / 1000);
-      d *= 1 + (ac_afm.to_temp_correction_pct_per_10c / 100) * ((oat_c - isa_at_pa) / 10);
+      const to = ac_afm.takeoff || {};
+      const base = ac_afm.to_base_msl_isa_m ?? to.base_msl_isa_m;
+      const pa_pct = ac_afm.to_pa_correction_pct_per_1000 ?? to.pa_correction_pct_per_1000 ?? 0;
+      const temp_pct = ac_afm.to_temp_correction_pct_per_10c ?? to.temp_correction_pct_per_10c ?? 0;
+      const wt_pct = ac_afm.to_weight_correction_pct_per_100kg ?? to.weight_correction_pct_per_100kg ?? 0;
+      if (base == null) return null;
+      d = base;
+      d *= 1 + (pa_pct / 100) * (pa_ft / 1000);
+      d *= 1 + (temp_pct / 100) * ((oat_c - isa_at_pa) / 10);
       const cw_to = ac_afm.current_takeoff_weight_kg || ac_afm.current_weight_kg;
-      if (cw_to && ac_afm.mtow_kg && ac_afm.to_weight_correction_pct_per_100kg){
+      if (cw_to && ac_afm.mtow_kg && wt_pct){
         const weight_diff_kg = cw_to - ac_afm.mtow_kg;
-        d *= 1 + (ac_afm.to_weight_correction_pct_per_100kg / 100) * (weight_diff_kg / 100);
+        d *= 1 + (wt_pct / 100) * (weight_diff_kg / 100);
       }
     }
     // Surface
@@ -278,12 +284,18 @@ window.Performance = (function(){
       }
     } else {
       const isa_at_pa = 15 - 1.98 * (pa_ft / 1000);
-      d = ac_afm.ld_base_msl_isa_m;
-      d *= 1 + (ac_afm.ld_pa_correction_pct_per_1000 / 100) * (pa_ft / 1000);
-      d *= 1 + (ac_afm.ld_temp_correction_pct_per_10c / 100) * ((oat_c - isa_at_pa) / 10);
-      if (ac_afm.current_landing_weight_kg && ac_afm.mtow_kg && ac_afm.ld_weight_correction_pct_per_100kg){
+      const ld = ac_afm.landing || {};
+      const base = ac_afm.ld_base_msl_isa_m ?? ld.base_msl_isa_m;
+      const pa_pct = ac_afm.ld_pa_correction_pct_per_1000 ?? ld.pa_correction_pct_per_1000 ?? 0;
+      const temp_pct = ac_afm.ld_temp_correction_pct_per_10c ?? ld.temp_correction_pct_per_10c ?? 0;
+      const wt_pct = ac_afm.ld_weight_correction_pct_per_100kg ?? ld.weight_correction_pct_per_100kg ?? 0;
+      if (base == null) return null;
+      d = base;
+      d *= 1 + (pa_pct / 100) * (pa_ft / 1000);
+      d *= 1 + (temp_pct / 100) * ((oat_c - isa_at_pa) / 10);
+      if (ac_afm.current_landing_weight_kg && ac_afm.mtow_kg && wt_pct){
         const weight_diff_kg = ac_afm.current_landing_weight_kg - ac_afm.mtow_kg;
-        d *= 1 + (ac_afm.ld_weight_correction_pct_per_100kg / 100) * (weight_diff_kg / 100);
+        d *= 1 + (wt_pct / 100) * (weight_diff_kg / 100);
       }
     }
     const surf_factor = (SURFACE_FACTORS_AC91[surface] || SURFACE_FACTORS_AC91.paved).ld;

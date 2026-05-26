@@ -38,7 +38,7 @@ canvas{max-width:100%}
 
 <div class="bar">
   <label>Aircraft:</label>
-  <select id="ac"><option value="C172N">C172N</option><option value="C152">C152</option></select>
+  <select id="ac"><option value="C172N">C172N</option><option value="C152">C152</option><option value="PA-38">PA-38</option></select>
   <label>Phase:</label>
   <select id="phase"><option value="takeoff">Takeoff</option><option value="landing">Landing</option></select>
 </div>
@@ -77,7 +77,7 @@ canvas{max-width:100%}
 </div>
 
 <div class="footer">
-  Notes: PA-38 omitted (FM has no tabular data — only linear coefficients, so the comparison would just reflect those coefficients).
+  Notes: PA-38 uses linear-coefficient FM data (base distance + per-1000ft PA + per-10°C OAT corrections) rather than a tabular FM; the same engine path applies AC91-3 corrections on top.
   Negative diffs mean the P-chart is more conservative; positive diffs mean the FM+AC91-3 layer is.
   Both methods are CASO-4-compliant; differences reflect different paths to the same regulatory standard.
 </div>
@@ -109,7 +109,7 @@ function afmLandingDist(a, elev, oat, surface, slope, wind, wet){
   return P.afmFactorsLanding(a, elev, oat, surface, slope, wind, wet).distance;
 }
 
-function mtow(acKey){ return ({'C172N':1043,'C152':757})[acKey]; }
+function mtow(acKey){ return ({'C172N':1043,'C152':757,'PA-38':757})[acKey]; }
 
 // --- 1. PA × OAT heatmap ---
 function renderHeat(acKey, phase){
