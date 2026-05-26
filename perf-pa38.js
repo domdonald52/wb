@@ -103,12 +103,19 @@ window.PCHART_DATA['PA-38'] = {
     "private_grass_day": 1.2692,
     "air_transport_grass_day": 1.5,
     "all_ops_paved_night": 1.3462,
-    "all_ops_grass_night": 1.8846
+    "all_ops_grass_night": 1.697
 },
-  slope_factor_pct_per_pct: 5,
-  wind_factor: {
-    headwind_pct_per_kt: 0.015,
-    tailwind_pct_per_kt: 0.060,
+  slope_factor_pct_per_pct_takeoff: 5,
+  slope_factor_pct_per_pct_landing: 6,
+  wind_factor_takeoff: {
+    headwind_pct_per_kt: 0.025,
+    tailwind_pct_per_kt: 0.037,
+    max_headwind_kt: 20,
+    max_tailwind_kt: 5,
+  },
+  wind_factor_landing: {
+    headwind_pct_per_kt: 0.025,
+    tailwind_pct_per_kt: 0.040,
     max_headwind_kt: 20,
     max_tailwind_kt: 5,
   },

@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v66';
+  const APP_VERSION = 'wb-v68';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1187,7 +1187,7 @@ const App = (function(){
         Landing: OAT ${fmt0(oatLd)}°C · QNH ${qnhLd} hPa · PA ${fmt0(paLd)}\u2032 · DA ${fmt0(daLd)}\u2032
       </div>
       <div style="border:1px solid #999;padding:8px;border-radius:4px;margin-bottom:8px;font-size:9pt">
-        <strong>Method:</strong> ${methodLabel || 'none'}${activeMethod === 'pchart' ? ' \u2014 CASO 4 baked into chart' : (activeMethod === 'afm' ? ' \u2014 CASO 4 (AC91-3) factors applied' : '')}
+        <strong>Method:</strong> ${methodLabel || 'none'}${activeMethod === 'pchart' ? ' \u2014 CASO 4 baked into chart' : (activeMethod === 'afm' ? ' \u2014 AC91-3 factors applied' : '')}
         ${activeMethod === 'pchart' ? '<br><strong>T/O chart line:</strong> ' + lineLabels[opKeyTo] + '<br><strong>Landing chart line:</strong> ' + lineLabels[opKeyLd] : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;font-size:9pt">
@@ -1360,7 +1360,8 @@ const App = (function(){
     // surface 'paved' / 'grass' / other (metal, coral, etc. treat as grass for safety)
     const grass = (surface !== 'paved');
     if (op_time === 'night'){
-      // Night = "All Ops Night" line (no Private/AT distinction at night per CASO 4)
+      // Night = "All Ops Night" line (P-charts use a single combined night line,
+      // with no separate Private vs Air Transport distinction at night)
       return grass ? 'all_ops_grass_night' : 'all_ops_paved_night';
     }
     if (op_type === 'air_transport'){
@@ -1779,7 +1780,7 @@ const App = (function(){
         const overshoot = (!ok && available > 0) ? `<div class="s" style="color:#dc2626;font-size:11px">Exceeds ${sub} by ${(distance - available).toFixed(0)} m</div>` : '';
         let altRow = '';
         if (altDistance != null){
-          const which = activeMethod === 'pchart' ? 'FM+CASO 4' : 'P-chart';
+          const which = activeMethod === 'pchart' ? 'FM+AC91-3' : 'P-chart';
           const useTheBigger = Math.max(distance, altDistance);
           altRow = `<div style="font-size:11px;color:var(--muted);margin-top:2px">${which}: ${altDistance.toFixed(0)} m \u2014 plan for the larger: <strong>${useTheBigger.toFixed(0)} m</strong></div>`;
         }
@@ -1854,11 +1855,14 @@ const App = (function(){
       const ldWtNote = hasLdWtData
         ? `Weight: ${(wbW2.ldw != null ? wbW2.ldw : ac.mtow).toFixed(0)} kg${wbW2.ldw == null ? ' (MTOW \u2014 no W&amp;B)' : ''}`
         : `Weight: MTOW assumed \u2014 chart has no weight factor`;
-      // CASO factors line: grass / wet, only shown when applicable
+      // Factor notes per side: surface and condition corrections.
+      // In P-chart mode these are CASO 4 multipliers baked into the chart's data;
+      // in FM mode they're AC91-3 corrections layered on top of the FM tables.
+      const factorLabel = activeMethod === 'pchart' ? 'CASO 4 factors' : 'AC91-3 factors';
       const toFactors = []; if (rTo.surface === 'grass') toFactors.push('Grass'); if (perfInput.to_condition === 'wet') toFactors.push('Wet');
       const ldFactors = []; if (rLd.surface === 'grass') ldFactors.push('Grass'); if (perfInput.ld_condition === 'wet') ldFactors.push('Wet');
-      const toCaso = toFactors.length ? `CASO factors: ${toFactors.join(', ')}` : '';
-      const ldCaso = ldFactors.length ? `CASO factors: ${ldFactors.join(', ')}` : '';
+      const toCaso = toFactors.length ? `${factorLabel}: ${toFactors.join(', ')}` : '';
+      const ldCaso = ldFactors.length ? `${factorLabel}: ${ldFactors.join(', ')}` : '';
 
       // Compute crosswind status per side: 0=green, 1=amber, 2=red, -1=no data/limit
       function xwStatus(w){
@@ -2060,7 +2064,10 @@ const App = (function(){
       const lref = (pdata.landing && pdata.landing.reference_points) || [];
       const ops = pdata.operation_multipliers || {};
       const ops_ld = pdata.operation_multipliers_ld || {};
-      const wf = pdata.wind_factor || {};
+      const wfTo = pdata.wind_factor_takeoff || pdata.wind_factor || {};
+      const wfLd = pdata.wind_factor_landing || pdata.wind_factor || {};
+      const slopeToPct = pdata.slope_factor_pct_per_pct_takeoff ?? pdata.slope_factor_pct_per_pct ?? 0;
+      const slopeLdPct = pdata.slope_factor_pct_per_pct_landing ?? pdata.slope_factor_pct_per_pct ?? 0;
 
       const opRows = Object.entries(ops).map(([k, v]) => {
         const ldVal = ops_ld[k];
@@ -2103,18 +2110,23 @@ const App = (function(){
           <p style="font-size:11px;color:var(--muted);margin:8px 0 2px"><strong>T/O weight:</strong> chart assumes MTOW (no weight-correction lines digitised). Result does not vary with W&amp;B T/O weight.</p>
         `}
 
-        <p style="margin:8px 0 2px"><strong>Slope</strong></p>
-        ${tbl([['per 1% slope', (pdata.slope_factor_pct_per_pct || 0).toFixed(1) + '%']])}
-
-        <p style="margin:8px 0 2px"><strong>Wind</strong></p>
+        <p style="margin:8px 0 2px"><strong>Slope</strong> (chart-baked)</p>
         ${tbl([
-          ['headwind reduction', ((wf.headwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
-          ['tailwind increase', ((wf.tailwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
-          ['max headwind (chart)', (wf.max_headwind_kt||0) + ' kt'],
-          ['max tailwind (chart)', (wf.max_tailwind_kt||0) + ' kt'],
+          ['T/O per 1% upslope', slopeToPct.toFixed(1) + '%'],
+          ['Landing per 1% upslope', slopeLdPct.toFixed(1) + '%'],
         ])}
 
-        <p style="margin:8px 0 2px"><strong>Wet runway</strong>: +15% landing (AC91-3)</p>
+        <p style="margin:8px 0 2px"><strong>Wind</strong> (chart-baked)</p>
+        ${tbl([
+          ['T/O headwind reduction', ((wfTo.headwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
+          ['T/O tailwind increase', ((wfTo.tailwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
+          ['Landing headwind reduction', ((wfLd.headwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
+          ['Landing tailwind increase', ((wfLd.tailwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
+          ['Max headwind (chart)', (wfTo.max_headwind_kt||0) + ' kt'],
+          ['Max tailwind (chart)', (wfTo.max_tailwind_kt||0) + ' kt'],
+        ])}
+
+        <p style="margin:8px 0 2px"><strong>Wet runway</strong>: +15% landing (chart convention)</p>
       `;
       return;
     }

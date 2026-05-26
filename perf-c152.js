@@ -105,10 +105,17 @@ window.PCHART_DATA['C152'] = {
     "all_ops_paved_night": 1.3514,
     "all_ops_grass_night": 1.6486
 },
-  slope_factor_pct_per_pct: 5,
-  wind_factor: {
-    headwind_pct_per_kt: 0.015,
-    tailwind_pct_per_kt: 0.060,
+  slope_factor_pct_per_pct_takeoff: 5,
+  slope_factor_pct_per_pct_landing: 6,
+  wind_factor_takeoff: {
+    headwind_pct_per_kt: 0.025,
+    tailwind_pct_per_kt: 0.037,
+    max_headwind_kt: 20,
+    max_tailwind_kt: 5,
+  },
+  wind_factor_landing: {
+    headwind_pct_per_kt: 0.025,
+    tailwind_pct_per_kt: 0.040,
     max_headwind_kt: 20,
     max_tailwind_kt: 5,
   },

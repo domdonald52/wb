@@ -105,10 +105,17 @@ window.PCHART_DATA['C172N'] = {
     "all_ops_paved_night": 1.3421,
     "all_ops_grass_night": 1.6316
 },
-  slope_factor_pct_per_pct: 5,
-  wind_factor: {
-    headwind_pct_per_kt: 0.015,
-    tailwind_pct_per_kt: 0.060,
+  slope_factor_pct_per_pct_takeoff: 5,
+  slope_factor_pct_per_pct_landing: 6,
+  wind_factor_takeoff: {
+    headwind_pct_per_kt: 0.025,
+    tailwind_pct_per_kt: 0.037,
+    max_headwind_kt: 20,
+    max_tailwind_kt: 5,
+  },
+  wind_factor_landing: {
+    headwind_pct_per_kt: 0.025,
+    tailwind_pct_per_kt: 0.040,
     max_headwind_kt: 20,
     max_tailwind_kt: 5,
   },
@@ -118,8 +125,8 @@ window.PCHART_DATA['C172N'] = {
   // Only applied when actual T/O weight is known from W&B data.
   takeoff_weight_multipliers: [
     { weight_kg: 1043, mult: 1.000 },  // 2300 lb MTOW
-    { weight_kg: 953,  mult: 0.780 },  // 2100 lb
-    { weight_kg: 862,  mult: 0.613 },  // 1900 lb
+    { weight_kg: 953,  mult: 0.800 },  // 2100 lb (chart-traced)
+    { weight_kg: 862,  mult: 0.621 },  // 1900 lb (chart-traced)
   ],
 };
 

@@ -1,0 +1,490 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>P-Chart Tracer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{--bg:#0b1220;--panel:#16213e;--panel-2:#1f2c4d;--text:#e6e8eb;--muted:#9aa5b1;--accent:#5eb1ff;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--border:#2c3a5e}
+body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,sans-serif;overflow:hidden}
+.bar{padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.bar button,.bar select,.bar input{background:var(--panel-2);color:var(--text);border:1px solid var(--border);padding:5px 9px;border-radius:5px;cursor:pointer;font-size:12px}
+.bar button.active{background:var(--accent);color:#000;font-weight:600}
+.bar label{font-size:12px;color:var(--muted)}
+.bar .sep{border-left:1px solid var(--border);height:22px;margin:0 2px}
+.bar .hint{margin-left:auto;font-size:12px;color:var(--muted)}
+.help-btn{background:var(--warn) !important;color:#000 !important}
+#hlock-btn.active{background:var(--ok) !important;color:#fff !important}
+main{display:grid;grid-template-columns:1fr 380px;height:calc(100vh - 46px)}
+#cv-wrap{position:relative;background:#222;display:flex;align-items:center;justify-content:center;overflow:hidden}
+canvas{cursor:crosshair;max-width:100%;max-height:100%;display:block}
+#readout{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.75);color:var(--accent);padding:4px 10px;border-radius:4px;font-family:monospace;font-size:13px;pointer-events:none}
+aside{background:var(--panel);border-left:1px solid var(--border);padding:10px;overflow:auto;font-size:13px}
+aside h3{margin:0 0 6px;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px}
+aside .group{margin-bottom:12px;padding:8px 10px;background:var(--panel-2);border-radius:6px;border:1px solid var(--border)}
+aside .row{display:flex;gap:6px;margin:4px 0;font-size:12px;align-items:center}
+aside .row label{flex:0 0 80px;color:var(--muted)}
+aside .row input,aside .row select{flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:4px 6px;border-radius:4px;font-size:12px}
+aside button.primary{background:var(--accent);color:#000;border:none;padding:6px 10px;border-radius:5px;cursor:pointer;font-weight:600}
+aside button.full{width:100%;margin-top:4px}
+aside button.del{background:var(--bad);color:#fff;border:none;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer}
+.hint{font-size:11px;color:var(--muted);margin:4px 0}
+.trace-item{padding:6px;background:var(--bg);border-radius:4px;margin:4px 0;font-size:11px;border-left:3px solid var(--accent)}
+.trace-item.active{box-shadow:0 0 0 2px var(--accent)}
+.trace-item .head{display:flex;justify-content:space-between;gap:4px;align-items:center;margin-bottom:2px}
+.trace-item .annotation{font-weight:600;color:var(--text)}
+.trace-item .dist{color:var(--accent);font-weight:600;font-family:monospace}
+.trace-item .meta{color:var(--muted);font-size:10px;font-family:monospace}
+.trace-item button{font-size:10px;padding:1px 5px;border-radius:3px;border:none;cursor:pointer;margin-left:2px}
+.trace-item button.use{background:var(--accent);color:#000}
+.trace-item button.del{background:var(--bad);color:#fff}
+#help-modal{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;z-index:100;align-items:flex-start;justify-content:center;padding:32px;overflow:auto}
+#help-modal.show{display:flex}
+#help-modal .inner{background:var(--panel);max-width:780px;padding:24px 32px;border-radius:8px;border:1px solid var(--border)}
+#help-modal h2,#help-modal h3{color:var(--accent)} #help-modal h3{margin:16px 0 4px;font-size:14px}
+#help-modal p,#help-modal li{line-height:1.5;font-size:13px}
+#help-modal kbd{background:var(--bg);padding:1px 6px;border:1px solid var(--border);border-radius:3px;font-size:11px;font-family:monospace}
+#help-modal code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:12px}
+#help-modal .close{float:right;background:var(--bad);color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer}
+</style>
+</head><body>
+
+<div class="bar">
+  <input type="file" id="img-file" accept="image/png,image/jpeg,application/pdf" style="background:var(--panel-2)">
+  <button id="prev-page" onclick="changePage(-1)" style="display:none">◀</button>
+  <span id="page-info" style="display:none;font-size:12px"></span>
+  <button id="next-page" onclick="changePage(1)" style="display:none">▶</button>
+  <span class="sep"></span>
+  <button id="hlock-btn" onclick="toggleHLock()" title="Horizontal lock: snaps next click's Y to the previous click's Y. Toggle off to follow oblique lines.">🔒 Lock H/V: OFF</button>
+  <span class="sep"></span>
+  <button id="deskew-btn" onclick="startDeskew()" title="Correct chart rotation: click 2 points that should be horizontally aligned, then 2 that should be vertically aligned.">⊞ De-skew</button>
+  <button onclick="downloadDeskewedClean()" title="Download de-skewed chart as PNG (no traces).">↓ De-skewed PNG</button>
+  <span class="sep"></span>
+  <button onclick="undoClick()" title="Undo last point in current trace (Ctrl/Cmd+Z)">↶ Undo</button>
+  <button onclick="finishTrace()" title="Finish the current trace (Enter)">✓ Finish trace</button>
+  <span class="sep"></span>
+  <button onclick="saveSession()">Save</button>
+  <button onclick="loadSession()">Load</button>
+  <button class="help-btn" onclick="showHelp()">? Help</button>
+  <span class="hint" id="hint">Load a chart. Then calibrate distance scale, then trace.</span>
+</div>
+
+<main>
+  <div id="cv-wrap"><canvas id="cv" width="1200" height="800"></canvas><div id="readout" style="display:none">—</div></div>
+  <aside>
+
+    <div class="group">
+      <h3>1. Calibrate distance scale</h3>
+      <div class="hint">Click 2+ ticks on the chart's right-hand distance scale. Type the value in metres for each.</div>
+      <div id="cal-list"></div>
+      <div id="cal-status" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+    </div>
+
+    <div class="group">
+      <h3>2. Trace a path</h3>
+      <div class="hint">Enter conditions (free text), then click points along the chart from OAT entry through the boxes to the distance scale. Hint: turn Lock H/V on for horizontal transfers, off to follow oblique lines. <kbd>Enter</kbd> = finish, <kbd>Ctrl+Z</kbd> = undo.</div>
+      <div class="row"><label>Conditions</label><input type="text" id="annotation" placeholder="e.g. PA 2000 / OAT 30 / MTOW / PPD"></div>
+      <button class="primary full" onclick="startTrace()" id="start-btn">Start new trace</button>
+      <div id="trace-state" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+    </div>
+
+    <div class="group">
+      <h3>3. Traces</h3>
+      <div id="traces-host"><div class="hint">No traces yet.</div></div>
+      <button class="full" onclick="exportTraces()" style="margin-top:6px;background:var(--panel-2);color:var(--text);border:1px solid var(--border)">Copy summary as text</button>
+      <button class="full" onclick="downloadAnnotated()" style="margin-top:4px;background:var(--panel-2);color:var(--text);border:1px solid var(--border)">Download chart with traces (PNG)</button>
+    </div>
+
+  </aside>
+</main>
+
+<div id="help-modal">
+  <div class="inner">
+    <button class="close" onclick="hideHelp()">Close</button>
+    <h2>P-Chart Tracer — Help</h2>
+
+    <h3>What this is</h3>
+    <p>A digital ruler for tracing P-charts. You draw the same path through the chart that you'd draw with a pencil on paper; the tool tells you the exit distance on the right-side scale.</p>
+
+    <h3>Workflow</h3>
+    <ol>
+      <li><strong>Load a chart</strong> (PNG, JPEG, or PDF — multi-page PDFs supported).</li>
+      <li><strong>Optional: De-skew.</strong> If the chart is slightly rotated (typical for photocopied scans), click <strong>⊞ De-skew</strong>, then click 2 points on the same horizontal line, then 2 points on the same vertical line. The image is rotated so the chart's axes line up with the screen. Do this <em>before</em> calibrating — de-skewing clears existing calibration and traces.</li>
+      <li><strong>Calibrate the distance scale.</strong> Click 2+ ticks on the right-hand distance scale (the vertical metre scale). For each click, type the value in metres. Two clicks is enough; more = more accurate fit.</li>
+      <li><strong>Enter the conditions</strong> you're tracing (e.g. <em>PA 2000 / OAT 30 / MTOW / PPD / 5kt HW / +1% slope</em>) in the Conditions field. This becomes the label.</li>
+      <li><strong>Click "Start new trace"</strong>, then click points along the chart:</li>
+      <li>Start at the OAT box's input edge at the right temperature.</li>
+      <li>Click where you cross each PA line, then move to the next box.</li>
+      <li><strong>Use Lock H/V</strong> for horizontal transfers between boxes (when the trace should go straight horizontally — turning Lock H/V <em>on</em> snaps the next click's Y to the previous click's Y).</li>
+      <li><strong>Turn Lock H/V off</strong> when following oblique lines within a box (e.g. tracing along the weight line, the ops line, the slope line).</li>
+      <li>End your trace by clicking inside the right-side distance scale area. The tool shows the distance there.</li>
+      <li><strong>Press <kbd>Enter</kbd></strong> or click "Finish trace" to lock in the trace. It appears in the right panel with the calibrated exit distance.</li>
+    </ol>
+
+    <h3>Tips</h3>
+    <ul>
+      <li>The <strong>cursor readout</strong> (top-left of the chart) shows the current Y position in metres while tracing — useful while still inside intermediate boxes.</li>
+      <li><strong>Lock H/V toggle</strong>: turn on for horizontal moves between boxes, turn off for oblique moves within a box. You'll toggle it multiple times in a typical trace.</li>
+      <li><kbd>Ctrl/Cmd+Z</kbd> undoes the last click in the current trace.</li>
+      <li>You can have <strong>multiple traces</strong> visible at once — useful for comparing conditions (e.g. PPD vs AT-PD at the same PA/OAT). Each gets a distinct colour.</li>
+      <li>Click the <strong>"use"</strong> button on a trace in the right panel to make it the active one (so a new edit appends to it).</li>
+      <li><strong>Save session</strong> stores all calibration and traces to a JSON file so you can come back later or share it.</li>
+      <li><strong>Download chart with traces</strong> exports the chart image with your traces drawn on it — useful for audit / sharing.</li>
+    </ul>
+
+    <h3>What this tool does NOT do</h3>
+    <ul>
+      <li>It does <strong>not</strong> generate <code>perf-XXX.js</code> data. It's just a visual aid for cross-checking the app against the chart.</li>
+      <li>It does <strong>not</strong> simulate the chart's nomogram chain. You do the visual tracing; it reads the distance off the scale.</li>
+      <li>Calibration is Y-only (distance scale). The tool doesn't try to understand the chart's X-axis or boxes.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+const CV = document.getElementById('cv'), CTX = CV.getContext('2d');
+const readout = document.getElementById('readout');
+let img = null, pdfDoc = null, pdfPage = 1;
+let calibration = [];  // [{px, py, value}]
+let yTransform = null; // py = a*Y + b
+let hLock = false;
+let traces = [];       // [{id, annotation, points:[{px,py,Y}], color}]
+let activeTraceId = null;
+let mode = 'cal';      // 'cal' or 'trace' or 'deskew'
+let deskew = null;     // when active: { step: 0..3, pts: [{px,py}], }
+const colors = ['#5eb1ff','#16a34a','#d97706','#dc2626','#a855f7','#ec4899','#06b6d4','#facc15'];
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+document.getElementById('img-file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (f.type === 'application/pdf'){
+    const buf = await f.arrayBuffer();
+    pdfDoc = await pdfjsLib.getDocument({data: buf}).promise;
+    pdfPage = 1;
+    document.getElementById('prev-page').style.display = '';
+    document.getElementById('next-page').style.display = '';
+    document.getElementById('page-info').style.display = '';
+    renderPdfPage();
+  } else {
+    pdfDoc = null;
+    document.getElementById('prev-page').style.display = 'none';
+    document.getElementById('next-page').style.display = 'none';
+    document.getElementById('page-info').style.display = 'none';
+    const r = new FileReader();
+    r.onload = ev => { img = new Image(); img.onload = () => { CV.width = img.naturalWidth; CV.height = img.naturalHeight; redraw(); }; img.src = ev.target.result; };
+    r.readAsDataURL(f);
+  }
+};
+async function changePage(d){ if (!pdfDoc) return; pdfPage = Math.max(1, Math.min(pdfDoc.numPages, pdfPage + d)); renderPdfPage(); }
+async function renderPdfPage(){
+  const page = await pdfDoc.getPage(pdfPage);
+  const vp = page.getViewport({scale: 2.0});
+  CV.width = vp.width; CV.height = vp.height;
+  await page.render({canvasContext: CTX, viewport: vp}).promise;
+  const dataUrl = CV.toDataURL();
+  img = new Image(); img.onload = redraw; img.src = dataUrl;
+  document.getElementById('page-info').textContent = `Page ${pdfPage}/${pdfDoc.numPages}`;
+}
+
+function pxFromEvent(e){
+  const rect = CV.getBoundingClientRect();
+  return {
+    px: (e.clientX - rect.left) * (CV.width / rect.width),
+    py: (e.clientY - rect.top) * (CV.height / rect.height),
+  };
+}
+function pyToY(py){ if (!yTransform) return null; return (py - yTransform.b) / yTransform.a; }
+
+CV.onmousemove = e => {
+  if (!yTransform) { readout.style.display = 'none'; return; }
+  const {py} = pxFromEvent(e);
+  const Y = pyToY(py);
+  readout.style.display = '';
+  readout.textContent = `Y ≈ ${Y.toFixed(1)} m`;
+};
+CV.onmouseleave = () => { readout.style.display = 'none'; };
+
+CV.onclick = e => {
+  const {px, py} = pxFromEvent(e);
+  if (mode === 'deskew'){
+    deskew.pts.push({px, py});
+    const labels = ['Click the 2nd point on the same HORIZONTAL line.',
+                    'Click the 1st point on a VERTICAL line.',
+                    'Click the 2nd point on the same VERTICAL line.'];
+    if (deskew.pts.length < 4){
+      document.getElementById('hint').textContent = labels[deskew.pts.length - 1];
+      redraw();
+      return;
+    }
+    applyDeskew();
+    return;
+  }
+  if (mode === 'cal'){
+    const v = prompt('Distance value (m) at this point on the Y axis:');
+    if (v === null) return;
+    const value = parseFloat(v);
+    if (isNaN(value)){ alert('Not a number.'); return; }
+    calibration.push({px, py, value});
+    recalibrate(); renderCalList(); redraw();
+  } else if (mode === 'trace'){
+    const tr = traces.find(t => t.id === activeTraceId); if (!tr) return;
+    let finalPx = px, finalPy = py;
+    if (hLock && tr.points.length){
+      const last = tr.points[tr.points.length - 1];
+      const dx = Math.abs(px - last.px), dy = Math.abs(py - last.py);
+      if (dx >= dy) finalPy = last.py;
+      else finalPx = last.px;
+    }
+    const Y = pyToY(finalPy);
+    tr.points.push({px: finalPx, py: finalPy, Y});
+    renderTraces(); redraw();
+  }
+};
+
+function startDeskew(){
+  if (!img){ alert('Load a chart first.'); return; }
+  if (calibration.length || traces.length){
+    if (!confirm('De-skewing will clear existing calibration and traces (their coordinates would no longer match the rotated image). Proceed?')) return;
+    calibration = []; traces = []; yTransform = null; activeTraceId = null;
+    renderCalList(); renderTraces(); document.getElementById('cal-status').textContent = '';
+  }
+  mode = 'deskew';
+  deskew = { pts: [] };
+  document.getElementById('hint').textContent = 'Click the 1st point on a HORIZONTAL line.';
+  redraw();
+}
+
+function applyDeskew(){
+  const [h1, h2, v1, v2] = deskew.pts;
+  // Angle of the H line from true horizontal
+  const angH = Math.atan2(h2.py - h1.py, h2.px - h1.px);
+  // Angle of the V line from true vertical (atan2(dx, dy) gives angle from vertical)
+  const angV = Math.atan2(v2.px - v1.px, v2.py - v1.py);
+  // Use the average (sign of angV is consistent with H rotation if chart is uniformly rotated)
+  const rot = (angH + angV) / 2;
+  // Render the image rotated by -rot into a new canvas of the same size
+  const tmp = document.createElement('canvas');
+  tmp.width = CV.width; tmp.height = CV.height;
+  const tctx = tmp.getContext('2d');
+  tctx.fillStyle = '#fff'; tctx.fillRect(0, 0, tmp.width, tmp.height);
+  tctx.translate(tmp.width/2, tmp.height/2);
+  tctx.rotate(-rot);
+  tctx.translate(-tmp.width/2, -tmp.height/2);
+  tctx.drawImage(img, 0, 0);
+  const dataUrl = tmp.toDataURL();
+  img = new Image();
+  img.onload = () => { mode = 'cal'; deskew = null; document.getElementById('hint').textContent = `De-skewed by ${(rot*180/Math.PI).toFixed(2)}\u00b0. Now calibrate the distance scale.`; redraw(); };
+  img.src = dataUrl;
+}
+
+function downloadDeskewedClean(){
+  if (!img){ alert('Load a chart first.'); return; }
+  // Render just the (current) image — if already de-skewed, this is the corrected version
+  const tmp = document.createElement('canvas');
+  tmp.width = CV.width; tmp.height = CV.height;
+  const tctx = tmp.getContext('2d');
+  tctx.drawImage(img, 0, 0);
+  const link = document.createElement('a');
+  link.download = 'pchart-deskewed.png';
+  link.href = tmp.toDataURL('image/png');
+  link.click();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && mode === 'trace'){ finishTrace(); e.preventDefault(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key === 'z' && mode === 'trace'){ undoClick(); e.preventDefault(); }
+});
+
+function recalibrate(){
+  if (calibration.length < 2){ yTransform = null; document.getElementById('cal-status').textContent = 'Need 2+ points.'; return; }
+  const n = calibration.length;
+  let sx=0,sy=0,sxx=0,sxy=0;
+  for (const c of calibration){ sx += c.value; sy += c.py; sxx += c.value*c.value; sxy += c.value*c.py; }
+  const denom = n*sxx - sx*sx;
+  if (Math.abs(denom) < 1e-9){ yTransform = null; document.getElementById('cal-status').textContent = 'Points have same value.'; return; }
+  const a = (n*sxy - sx*sy)/denom, b = (sy - a*sx)/n;
+  let res2 = 0;
+  for (const c of calibration){ const e = c.py - (a*c.value + b); res2 += e*e; }
+  yTransform = {a, b};
+  document.getElementById('cal-status').textContent = `Calibrated. RMS: ${Math.sqrt(res2/n).toFixed(1)} px.`;
+}
+
+function renderCalList(){
+  const host = document.getElementById('cal-list');
+  host.innerHTML = calibration.map((c,i) =>
+    `<div class="trace-item"><div class="head"><span>#${i+1} Y = ${c.value} m</span><button class="del" onclick="delCal(${i})">✕</button></div></div>`
+  ).join('') || '<div class="hint">Click on the chart\'s distance scale to add a calibration point.</div>';
+}
+function delCal(i){ calibration.splice(i,1); recalibrate(); renderCalList(); redraw(); }
+
+function toggleHLock(){
+  hLock = !hLock;
+  const b = document.getElementById('hlock-btn');
+  b.classList.toggle('active', hLock);
+  b.textContent = '🔒 Lock H/V: ' + (hLock ? 'ON' : 'OFF');
+}
+
+function startTrace(){
+  if (!yTransform){ alert('Calibrate the distance scale first.'); return; }
+  const annotation = document.getElementById('annotation').value.trim() || ('Trace ' + (traces.length + 1));
+  const id = 't-' + Date.now();
+  const color = colors[traces.length % colors.length];
+  traces.push({id, annotation, points: [], color});
+  activeTraceId = id;
+  mode = 'trace';
+  document.getElementById('start-btn').textContent = 'Start new trace';
+  document.getElementById('trace-state').textContent = `Tracing "${annotation}" — click points. Lock H/V toggle in toolbar. Enter to finish.`;
+  renderTraces();
+}
+function undoClick(){
+  const tr = traces.find(t => t.id === activeTraceId); if (!tr || !tr.points.length) return;
+  tr.points.pop();
+  renderTraces(); redraw();
+}
+function finishTrace(){
+  const tr = traces.find(t => t.id === activeTraceId);
+  if (!tr){ return; }
+  if (!tr.points.length){
+    // Empty trace — drop it
+    traces = traces.filter(t => t.id !== activeTraceId);
+  }
+  mode = 'cal';
+  activeTraceId = null;
+  document.getElementById('trace-state').textContent = 'Trace finished.';
+  renderTraces(); redraw();
+}
+
+function delTrace(id){
+  traces = traces.filter(t => t.id !== id);
+  if (activeTraceId === id) { activeTraceId = null; mode = 'cal'; }
+  renderTraces(); redraw();
+}
+function useTrace(id){
+  activeTraceId = id; mode = 'trace';
+  const tr = traces.find(t => t.id === id);
+  document.getElementById('trace-state').textContent = `Editing "${tr.annotation}" — click to extend, Enter to finish.`;
+  renderTraces();
+}
+
+function renderTraces(){
+  const host = document.getElementById('traces-host');
+  if (!traces.length){ host.innerHTML = '<div class="hint">No traces yet.</div>'; return; }
+  host.innerHTML = traces.map(t => {
+    const last = t.points.length ? t.points[t.points.length - 1] : null;
+    const dist = last && last.Y != null ? last.Y.toFixed(0) + ' m' : '—';
+    const isActive = t.id === activeTraceId;
+    return `<div class="trace-item ${isActive?'active':''}" style="border-left-color:${t.color}">
+      <div class="head"><span class="annotation">${t.annotation}</span><span><span class="dist">${dist}</span> <button class="use" onclick="useTrace('${t.id}')">use</button><button class="del" onclick="delTrace('${t.id}')">✕</button></span></div>
+      <div class="meta">${t.points.length} pts</div>
+    </div>`;
+  }).join('');
+}
+
+function redraw(){
+  CTX.clearRect(0,0,CV.width,CV.height);
+  if (img) CTX.drawImage(img, 0, 0);
+  // De-skew reference markers (during 4-click capture)
+  if (mode === 'deskew' && deskew){
+    deskew.pts.forEach((p, i) => {
+      CTX.fillStyle = i < 2 ? '#5eb1ff' : '#16a34a';
+      CTX.beginPath(); CTX.arc(p.px, p.py, 6, 0, 2*Math.PI); CTX.fill();
+      CTX.fillStyle = '#fff'; CTX.font = 'bold 12px sans-serif';
+      CTX.fillText((i < 2 ? 'H' : 'V') + (i % 2 + 1), p.px + 9, p.py - 5);
+    });
+    if (deskew.pts.length === 2){
+      CTX.strokeStyle = '#5eb1ff'; CTX.lineWidth = 1; CTX.setLineDash([4,3]);
+      CTX.beginPath(); CTX.moveTo(deskew.pts[0].px, deskew.pts[0].py); CTX.lineTo(deskew.pts[1].px, deskew.pts[1].py); CTX.stroke();
+      CTX.setLineDash([]);
+    }
+  }
+  // Calibration markers
+  calibration.forEach(c => {
+    CTX.fillStyle = '#d97706';
+    CTX.beginPath(); CTX.arc(c.px, c.py, 5, 0, 2*Math.PI); CTX.fill();
+    CTX.fillStyle = '#fff'; CTX.font = 'bold 12px sans-serif';
+    CTX.fillText(c.value + 'm', c.px + 8, c.py - 4);
+  });
+  // Horizontal calibration line (helps visualise the Y scale)
+  if (yTransform && calibration.length >= 2){
+    CTX.strokeStyle = 'rgba(217,119,6,0.25)'; CTX.lineWidth = 1; CTX.setLineDash([2,4]);
+    const minPx = Math.min(...calibration.map(c => c.px));
+    const maxPx = Math.max(...calibration.map(c => c.px));
+    for (const c of calibration){
+      CTX.beginPath(); CTX.moveTo(0, c.py); CTX.lineTo(CV.width, c.py); CTX.stroke();
+    }
+    CTX.setLineDash([]);
+  }
+  // Traces
+  traces.forEach(t => {
+    const isActive = t.id === activeTraceId;
+    CTX.strokeStyle = t.color; CTX.fillStyle = t.color;
+    CTX.lineWidth = isActive ? 5 : 3;
+    CTX.globalAlpha = isActive ? 1.0 : 0.5;
+    CTX.beginPath();
+    t.points.forEach((p,i) => { if (i===0) CTX.moveTo(p.px,p.py); else CTX.lineTo(p.px,p.py); });
+    CTX.stroke();
+    t.points.forEach((p,i) => { CTX.beginPath(); CTX.arc(p.px, p.py, isActive ? 4 : 3, 0, 2*Math.PI); CTX.fill(); });
+    // Annotation at last point
+    if (t.points.length){
+      const last = t.points[t.points.length-1];
+      CTX.fillStyle = t.color; CTX.font = 'bold 12px sans-serif';
+      const txt = `${t.annotation}${last.Y != null ? ' (' + last.Y.toFixed(0) + ' m)' : ''}`;
+      // Background for readability
+      const w = CTX.measureText(txt).width;
+      CTX.fillStyle = 'rgba(0,0,0,0.7)';
+      CTX.fillRect(last.px + 6, last.py - 16, w + 8, 16);
+      CTX.fillStyle = t.color;
+      CTX.fillText(txt, last.px + 10, last.py - 4);
+    }
+    CTX.globalAlpha = 1.0;
+  });
+}
+
+function exportTraces(){
+  let txt = 'P-chart traces\n' + '='.repeat(50) + '\n\n';
+  traces.forEach(t => {
+    const last = t.points.length ? t.points[t.points.length-1] : null;
+    const dist = last && last.Y != null ? last.Y.toFixed(0) + ' m' : '—';
+    txt += `${t.annotation}: ${dist} (${t.points.length} pts)\n`;
+  });
+  navigator.clipboard.writeText(txt).then(()=>alert('Copied to clipboard.')).catch(e=>alert('Copy failed: ' + e.message));
+}
+
+function downloadAnnotated(){
+  const link = document.createElement('a');
+  link.download = 'pchart-traced.png';
+  link.href = CV.toDataURL('image/png');
+  link.click();
+}
+
+function saveSession(){
+  const blob = new Blob([JSON.stringify({calibration, traces}, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pchart-tracer-session.json';
+  a.click();
+}
+function loadSession(){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'application/json';
+  inp.onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        calibration = d.calibration || []; traces = d.traces || []; activeTraceId = null; mode = 'cal';
+        recalibrate(); renderCalList(); renderTraces(); redraw();
+      } catch(err){ alert('Bad session: ' + err.message); }
+    };
+    r.readAsText(f);
+  };
+  inp.click();
+}
+
+function showHelp(){ document.getElementById('help-modal').classList.add('show'); }
+function hideHelp(){ document.getElementById('help-modal').classList.remove('show'); }
+
+renderCalList(); renderTraces();
+</script>
+</body></html>

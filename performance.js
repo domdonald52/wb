@@ -141,9 +141,10 @@ window.Performance = (function(){
       }
       d *= weight_mult;
     }
-    const slope_factor = 1 + (slope_pct * data.slope_factor_pct_per_pct / 100);
+    const slope_pct_per_pct = data.slope_factor_pct_per_pct_takeoff ?? data.slope_factor_pct_per_pct;
+    const slope_factor = 1 + (slope_pct * slope_pct_per_pct / 100);
     d *= slope_factor;
-    const wind_factor = computeWindFactor(data, wind_component_kt);
+    const wind_factor = computeWindFactor(data.wind_factor_takeoff || data.wind_factor, wind_component_kt);
     d *= wind_factor;
     if (wet) d *= 1.15;
     return { distance: d, d_ppd, op_mult, weight_mult, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
@@ -163,16 +164,17 @@ window.Performance = (function(){
     const mults_ld = data.operation_multipliers_ld || data.operation_multipliers || {};
     const op_mult = mults_ld[operation] || 1.0;
     let d = d_ppd * op_mult;
-    const slope_factor = 1 - (slope_pct * data.slope_factor_pct_per_pct / 100);
+    const slope_pct_per_pct = data.slope_factor_pct_per_pct_landing ?? data.slope_factor_pct_per_pct;
+    const slope_factor = 1 - (slope_pct * slope_pct_per_pct / 100);
     d *= slope_factor;
-    const wind_factor = computeWindFactor(data, wind_component_kt);
+    const wind_factor = computeWindFactor(data.wind_factor_landing || data.wind_factor, wind_component_kt);
     d *= wind_factor;
     if (wet) d *= 1.15;
     return { distance: d, d_ppd, op_mult, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
   }
 
-  function computeWindFactor(data, wind_kt){
-    const wf = data.wind_factor;
+  function computeWindFactor(wf, wind_kt){
+    if (!wf) wf = { headwind_pct_per_kt: 0.015, tailwind_pct_per_kt: 0.06, max_headwind_kt: 20, max_tailwind_kt: 5 };
     if (wind_kt >= 0){
       // Headwind: reduces distance
       const capped = Math.min(wind_kt, wf.max_headwind_kt);
@@ -248,7 +250,9 @@ window.Performance = (function(){
     // Slope (AC91-3 Table 2: 5% per 1% for T/O uphill)
     const slope_factor = 1 + (slope_pct * 5 / 100);
     d *= slope_factor;
-    // Wind: 1.5% per HW kt, 6% per TW kt (matches CASO-baked P-chart factors).
+    // Wind: AC91-3 standard 1.5% per HW kt, 6% per TW kt (applied in FM mode on top of FM table values).
+    // Note: NZ P-chart family uses different chart-baked factors (2.5% HW, 3.7-4.0% TW); those are stored
+    // per-aircraft in `wind_factor_takeoff` / `wind_factor_landing` and applied only in P-chart mode.
     let wind_factor;
     if (wind_kt >= 0){
       wind_factor = 1 - 0.015 * Math.min(wind_kt, 20);
