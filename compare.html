@@ -1,0 +1,273 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>P-Chart vs FM+AC91-3 — Comparison</title>
+<script src="chart.umd.min.js"></script>
+<script src="performance.js"></script>
+<script src="perf-pa38.js"></script>
+<script src="perf-c172n.js"></script>
+<script src="perf-c152.js"></script>
+<style>
+:root{--bg:#0b1220;--panel:#16213e;--panel-2:#1f2c4d;--text:#e6e8eb;--muted:#9aa5b1;--accent:#14b8a6;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--border:#2c3a5e}
+body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,sans-serif;padding:16px}
+h1{font-size:18px;margin:0 0 6px;color:var(--accent)}
+.lede{color:var(--muted);font-size:13px;max-width:800px;margin-bottom:14px}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.bar label{font-size:12px;color:var(--muted)}
+.bar select{background:var(--panel-2);color:var(--text);border:1px solid var(--border);padding:5px 9px;border-radius:5px;font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:1400px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px}
+.card h2{font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px}
+.card .sub{color:var(--muted);font-size:11px;margin-bottom:10px}
+.heat{display:grid;font-size:11px;font-family:monospace;width:100%}
+.heat .cell{padding:6px 4px;text-align:center;border:1px solid var(--border)}
+.heat .hdr{background:var(--panel-2);color:var(--muted);font-weight:600}
+canvas{max-width:100%}
+.legend{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--muted);margin-top:8px;flex-wrap:wrap}
+.legend .sw{width:14px;height:14px;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:3px}
+.footer{margin-top:18px;color:var(--muted);font-size:11px;max-width:800px}
+</style>
+</head><body>
+<h1>P-Chart vs Flight Manual + AC91-3 — Method Comparison</h1>
+<div class="lede">
+  Both methods are CASO-4-compliant but use different correction factors. This page shows where they disagree.
+  Discrepancy = (FM+AC91-3 − P-chart) / P-chart × 100%.
+  Positive % = FM+AC91-3 gives the longer (more conservative) distance.
+  Negative % = P-chart gives the longer distance.
+</div>
+
+<div class="bar">
+  <label>Aircraft:</label>
+  <select id="ac"><option value="C172N">C172N</option><option value="C152">C152</option></select>
+  <label>Phase:</label>
+  <select id="phase"><option value="takeoff">Takeoff</option><option value="landing">Landing</option></select>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>1. PA × OAT heatmap</h2>
+    <div class="sub">Baseline: MTOW, PPD (private paved day), 0 wind, 0 slope, dry. Colour = discrepancy %.</div>
+    <div id="heat-host"></div>
+    <div class="legend">
+      <span><span class="sw" style="background:#1e3a8a"></span> &lt; −10% (P-chart higher)</span>
+      <span><span class="sw" style="background:#3b82f6"></span> −10 to −3%</span>
+      <span><span class="sw" style="background:#16a34a"></span> ±3% (agree)</span>
+      <span><span class="sw" style="background:#d97706"></span> +3 to +10%</span>
+      <span><span class="sw" style="background:#dc2626"></span> &gt; +10% (FM higher)</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. By operation type</h2>
+    <div class="sub">SL/15°C MTOW 0 wind 0 slope dry. Shows distance from each method.</div>
+    <canvas id="ops-chart" height="180"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>3. Discrepancy vs wind</h2>
+    <div class="sub">SL/15°C MTOW PPD 0 slope dry. X = wind component (kt; positive = headwind, negative = tailwind).</div>
+    <canvas id="wind-chart" height="180"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>4. Discrepancy vs weight (C172N takeoff only)</h2>
+    <div class="sub">SL/15°C PPD 0 wind 0 slope dry. Only C172N has weight-corrected data in both methods.</div>
+    <canvas id="wt-chart" height="180"></canvas>
+  </div>
+</div>
+
+<div class="footer">
+  Notes: PA-38 omitted (FM has no tabular data — only linear coefficients, so the comparison would just reflect those coefficients).
+  Negative diffs mean the P-chart is more conservative; positive diffs mean the FM+AC91-3 layer is.
+  Both methods are CASO-4-compliant; differences reflect different paths to the same regulatory standard.
+</div>
+
+<script>
+const P = window.Performance;
+
+function colorFor(pct){
+  if (pct < -10) return '#1e3a8a';
+  if (pct < -3)  return '#3b82f6';
+  if (pct < 3)   return '#16a34a';
+  if (pct < 10)  return '#d97706';
+  return '#dc2626';
+}
+
+function getP(acKey){ return window.PCHART_DATA[acKey]; }
+function getA(acKey){ return window.AFM_DATA[acKey]; }
+
+function pchartTakeoffDist(p, pa, oat, op, slope, wind, wet, weight){
+  return P.pchartTakeoffDistance(p, pa, oat, op, slope, wind, wet, weight).distance;
+}
+function afmTakeoffDist(a, pa, oat, surface, slope, wind, wet){
+  return P.afmFactorsTakeoff(a, pa, oat, surface, slope, wind, wet).distance;
+}
+function pchartLandingDist(p, elev, op, slope, wind, wet){
+  return P.pchartLandingDistance(p, elev, op, slope, wind, wet).distance;
+}
+function afmLandingDist(a, elev, oat, surface, slope, wind, wet){
+  return P.afmFactorsLanding(a, elev, oat, surface, slope, wind, wet).distance;
+}
+
+function mtow(acKey){ return ({'C172N':1043,'C152':757})[acKey]; }
+
+// --- 1. PA × OAT heatmap ---
+function renderHeat(acKey, phase){
+  const p = getP(acKey), a = getA(acKey), w = mtow(acKey);
+  const PAs = [0,1000,2000,3000,4000];
+  const OATs = [-10,0,10,20,30,40];
+  const host = document.getElementById('heat-host');
+  host.innerHTML = '';
+  const tbl = document.createElement('div');
+  tbl.className = 'heat';
+  tbl.style.gridTemplateColumns = '70px ' + OATs.map(()=>'1fr').join(' ');
+  // Header
+  tbl.innerHTML += `<div class="cell hdr">${phase==='takeoff'?'PA ↓':'Elev ↓'}</div>` + OATs.map(o => `<div class="cell hdr">OAT ${o}°C</div>`).join('');
+  // Rows
+  PAs.forEach(pa => {
+    tbl.innerHTML += `<div class="cell hdr">${pa} ft</div>`;
+    OATs.forEach(oat => {
+      let pVal, aVal;
+      if (phase==='takeoff'){
+        pVal = pchartTakeoffDist(p, pa, oat, 'private_paved_day', 0, 0, false, w);
+        aVal = afmTakeoffDist(a, pa, oat, 'paved', 0, 0, false);
+      } else {
+        pVal = pchartLandingDist(p, pa, 'private_paved_day', 0, 0, false);
+        aVal = afmLandingDist(a, pa, oat, 'paved', 0, 0, false);
+      }
+      const pct = pVal > 0 ? (aVal - pVal) / pVal * 100 : 0;
+      const sign = pct >= 0 ? '+' : '';
+      tbl.innerHTML += `<div class="cell" style="background:${colorFor(pct)};color:#fff;font-weight:600" title="P-chart ${pVal.toFixed(0)} m, FM+AC91-3 ${aVal.toFixed(0)} m">${sign}${pct.toFixed(0)}%</div>`;
+    });
+  });
+  host.appendChild(tbl);
+}
+
+// --- 2. By operation type bar chart ---
+let opsChart = null;
+function renderOps(acKey, phase){
+  const p = getP(acKey), a = getA(acKey), w = mtow(acKey);
+  const ops = [
+    { key: 'private_paved_day',      label: 'PPD',  surface: 'paved' },
+    { key: 'air_transport_paved_day',label: 'AT-PD',surface: 'paved' },
+    { key: 'private_grass_day',      label: 'P-GD', surface: 'grass' },
+    { key: 'air_transport_grass_day',label: 'AT-GD',surface: 'grass' },
+    { key: 'all_ops_paved_night',    label: 'AO-PN',surface: 'paved' },
+    { key: 'all_ops_grass_night',    label: 'AO-GN',surface: 'grass' },
+  ];
+  const pVals = ops.map(o => phase==='takeoff'
+    ? pchartTakeoffDist(p, 0, 15, o.key, 0, 0, false, w)
+    : pchartLandingDist(p, 0, o.key, 0, 0, false));
+  const aVals = ops.map(o => phase==='takeoff'
+    ? afmTakeoffDist(a, 0, 15, o.surface, 0, 0, false)
+    : afmLandingDist(a, 0, 15, o.surface, 0, 0, false));
+  if (opsChart) opsChart.destroy();
+  opsChart = new Chart(document.getElementById('ops-chart'), {
+    type: 'bar',
+    data: {
+      labels: ops.map(o => o.label),
+      datasets: [
+        { label: 'P-chart',     data: pVals, backgroundColor: '#14b8a6' },
+        { label: 'FM+AC91-3',   data: aVals, backgroundColor: '#5eb1ff' },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#e6e8eb' } } },
+      scales: {
+        x: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' } },
+        y: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Distance (m)', color: '#9aa5b1' } },
+      },
+    },
+  });
+}
+
+// --- 3. Discrepancy vs wind ---
+let windChart = null;
+function renderWind(acKey, phase){
+  const p = getP(acKey), a = getA(acKey), w = mtow(acKey);
+  const winds = [];
+  for (let k = -5; k <= 20; k++) winds.push(k);
+  const pVals = winds.map(k => phase==='takeoff'
+    ? pchartTakeoffDist(p, 0, 15, 'private_paved_day', 0, k, false, w)
+    : pchartLandingDist(p, 0, 'private_paved_day', 0, k, false));
+  const aVals = winds.map(k => phase==='takeoff'
+    ? afmTakeoffDist(a, 0, 15, 'paved', 0, k, false)
+    : afmLandingDist(a, 0, 15, 'paved', 0, k, false));
+  if (windChart) windChart.destroy();
+  windChart = new Chart(document.getElementById('wind-chart'), {
+    type: 'line',
+    data: {
+      labels: winds,
+      datasets: [
+        { label: 'P-chart',   data: pVals, borderColor: '#14b8a6', backgroundColor: '#14b8a644', tension: 0.1 },
+        { label: 'FM+AC91-3', data: aVals, borderColor: '#5eb1ff', backgroundColor: '#5eb1ff44', tension: 0.1 },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#e6e8eb' } } },
+      scales: {
+        x: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Wind component (kt; − = tailwind)', color: '#9aa5b1' } },
+        y: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Distance (m)', color: '#9aa5b1' } },
+      },
+    },
+  });
+}
+
+// --- 4. Discrepancy vs weight (C172N takeoff only) ---
+let wtChart = null;
+function renderWeight(acKey, phase){
+  const canvas = document.getElementById('wt-chart');
+  if (acKey !== 'C172N' || phase !== 'takeoff'){
+    if (wtChart){ wtChart.destroy(); wtChart = null; }
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#9aa5b1'; ctx.font = '13px system-ui,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Only available for C172N takeoff', canvas.width/2, canvas.height/2);
+    return;
+  }
+  const p = getP(acKey), a = getA(acKey);
+  const weights = [];
+  for (let w = 862; w <= 1043; w += 10) weights.push(w);
+  const pVals = weights.map(w => pchartTakeoffDist(p, 0, 15, 'private_paved_day', 0, 0, false, w));
+  const aVals = weights.map(w => {
+    // FM has takeoff_table at 1043kg + takeoff_table_alt at 953kg; afmFactorsTakeoff blends
+    // by passing current_weight via the data object — but the actual API uses MTOW only.
+    // We'll just call afmFactorsTakeoff which uses MTOW-only and note this in caption.
+    return afmTakeoffDist(a, 0, 15, 'paved', 0, 0, false);
+  });
+  if (wtChart) wtChart.destroy();
+  wtChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: weights,
+      datasets: [
+        { label: 'P-chart (weight-aware)',  data: pVals, borderColor: '#14b8a6', tension: 0.1 },
+        { label: 'FM+AC91-3 (MTOW only)',   data: aVals, borderColor: '#5eb1ff', tension: 0.1, borderDash: [4,4] },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#e6e8eb' } } },
+      scales: {
+        x: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Weight (kg)', color: '#9aa5b1' } },
+        y: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Distance (m)', color: '#9aa5b1' } },
+      },
+    },
+  });
+}
+
+function refresh(){
+  const ac = document.getElementById('ac').value;
+  const phase = document.getElementById('phase').value;
+  renderHeat(ac, phase);
+  renderOps(ac, phase);
+  renderWind(ac, phase);
+  renderWeight(ac, phase);
+}
+document.getElementById('ac').onchange = refresh;
+document.getElementById('phase').onchange = refresh;
+refresh();
+</script>
+</body></html>
