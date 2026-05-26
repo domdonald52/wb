@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v68';
+  const APP_VERSION = 'wb-v70';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1129,8 +1129,8 @@ const App = (function(){
     const violations = [];
     if (to_d != null && rTo.tora > 0 && to_d > rTo.tora) violations.push(`T/O ${to_d.toFixed(0)} m exceeds TORA ${rTo.tora} m`);
     if (ld_d != null && rLd.lda > 0 && ld_d > rLd.lda) violations.push(`Landing ${ld_d.toFixed(0)} m exceeds LDA ${rLd.lda} m`);
-    if (xwLimit && toW.crosswind > xwLimit) violations.push(`T/O crosswind ${toW.crosswind.toFixed(1)} kt exceeds limit ${xwLimit} kt`);
-    if (xwLimit && ldW.crosswind > xwLimit) violations.push(`Landing crosswind ${ldW.crosswind.toFixed(1)} kt exceeds limit ${xwLimit} kt`);
+    if (xwLimit && Math.abs(toW.crosswind) > xwLimit) violations.push(`T/O crosswind ${Math.abs(toW.crosswind).toFixed(1)} kt exceeds limit ${xwLimit} kt`);
+    if (xwLimit && Math.abs(ldW.crosswind) > xwLimit) violations.push(`Landing crosswind ${Math.abs(ldW.crosswind).toFixed(1)} kt exceeds limit ${xwLimit} kt`);
     if (toW.headwind < 0) violations.push(`T/O tailwind ${(-toW.headwind).toFixed(1)} kt`);
     if (ldW.headwind < 0) violations.push(`Landing tailwind ${(-ldW.headwind).toFixed(1)} kt`);
     if (ac.group != null && rTo.group != null && ac.group > rTo.group) violations.push(`T/O: Aircraft Group ${ac.group} exceeds runway Group ${rTo.group}`);
@@ -1755,10 +1755,10 @@ const App = (function(){
     }
 
     const host = document.getElementById('perf-results');
+    const bannerTopEl = document.getElementById('perf-banner-top');
     if (activeMethod === 'none'){
-      host.innerHTML =
-        (methodNote ? `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` : "") +
-        `<div class="banner warn" style="margin:0">No performance data computed for this aircraft. Set a P-chart or Flight Manual data source in the aircraft configuration.</div>`;
+      if (bannerTopEl) bannerTopEl.innerHTML = `<div class="banner" style="margin:0 0 8px;background:var(--panel-2);border:1px solid var(--border);color:var(--muted)">No performance data for this aircraft. Set a P-chart or Flight Manual data source in the aircraft config.</div>`;
+      host.innerHTML = '';
       document.getElementById('perf-breakdown').innerHTML = '';
     } else {
       const stat = (label, distance, available, ok, sub, altDistance, weightNote, casoNote, xwNote) => {
@@ -1800,8 +1800,13 @@ const App = (function(){
             ${altRow}
           </div>`;
       };
-      const toOK = rTo.tora > 0 && to_result.distance <= rTo.tora;
-      const ldOK = rLd.lda > 0 && ld_result.distance <= rLd.lda;
+      const env = activeMethod === 'pchart' ? P.pchartEnvelope(pdata) : (activeMethod === 'afm' ? P.afmEnvelope(adata) : null);
+      const toEnvIssuesEarly = P.envelopeStatus(env, paTo, oatTo, null);
+      const ldEnvIssuesEarly = P.envelopeStatus(env, paLd, oatLd, rLd.elev);
+      if (toEnvIssuesEarly.length){ to_result.wind_out_of_range = true; to_result.wind_oor_reason = `T/O outside chart range: ${toEnvIssuesEarly.join('; ')}`; }
+      if (ldEnvIssuesEarly.length){ ld_result.wind_out_of_range = true; ld_result.wind_oor_reason = `Landing outside chart range: ${ldEnvIssuesEarly.join('; ')}`; }
+      const toOK = rTo.tora > 0 && to_result.distance <= rTo.tora && !to_result.wind_out_of_range;
+      const ldOK = rLd.lda > 0 && ld_result.distance <= rLd.lda && !ld_result.wind_out_of_range;
 
       // Compute alternative method if both available, for comparison
       let alt_to = null, alt_ld = null;
@@ -1828,9 +1833,8 @@ const App = (function(){
         if (ldWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing tailwind ${(-ldWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
       }
       // Envelope (chart range) warnings
-      const env = activeMethod === 'pchart' ? P.pchartEnvelope(pdata) : (activeMethod === 'afm' ? P.afmEnvelope(adata) : null);
-      const toEnvIssues = P.envelopeStatus(env, paTo, oatTo, null);
-      const ldEnvIssues = P.envelopeStatus(env, paLd, oatLd, rLd.elev);
+      const toEnvIssues = toEnvIssuesEarly;
+      const ldEnvIssues = ldEnvIssuesEarly;
       if (toEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ T/O outside chart range: ${toEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
       if (ldEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing outside chart range: ${ldEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
 
@@ -1896,7 +1900,15 @@ const App = (function(){
         if (anyRed) summaryBanner = `<div class="banner bad" style="margin:0 0 8px">\u2717 Performance limits exceeded \u2014 review below.</div>`;
         else if (anyAmber) summaryBanner = `<div class="banner warn" style="margin:0 0 8px">\u26a0 Within performance limits but with caution \u2014 review below.</div>`;
         else summaryBanner = `<div class="banner ok" style="margin:0 0 8px">\u2713 Within all performance limits.</div>`;
+      } else {
+        const missing = [];
+        if (!(rTo.tora > 0)) missing.push('Takeoff');
+        if (!(rLd.lda > 0))  missing.push('Landing');
+        summaryBanner = `<div class="banner" style="margin:0 0 8px;background:var(--panel-2);border:1px solid var(--border);color:var(--muted)">Select ${missing.join(' &amp; ')} runway${missing.length>1?'s':''} to evaluate performance.</div>`;
       }
+
+      const toCasoFinal = (to_result.wind_out_of_range ? `<span style="color:#dc2626;font-weight:600">\u2717 ${to_result.wind_oor_reason}</span>${toCaso ? ' \u00b7 ' + toCaso : ''}` : toCaso);
+      const ldCasoFinal = (ld_result.wind_out_of_range ? `<span style="color:#dc2626;font-weight:600">\u2717 ${ld_result.wind_oor_reason}</span>${ldCaso ? ' \u00b7 ' + ldCaso : ''}` : ldCaso);
 
       const bannerTop = document.getElementById('perf-banner-top');
       if (bannerTop) bannerTop.innerHTML = summaryBanner;
@@ -1906,8 +1918,8 @@ const App = (function(){
         chartNotes +
         windWarning +
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
-        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote, toCaso, toXwNote) +
-        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCaso, ldXwNote) +
+        stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote, toCasoFinal, toXwNote) +
+        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCasoFinal, ldXwNote) +
         `</div>`;
 
       const fmt2 = x => x.toFixed(3);

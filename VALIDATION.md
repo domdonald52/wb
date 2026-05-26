@@ -102,17 +102,13 @@ All values in metres. Diff = (engine − traced)/traced × 100%.
 | L1: 2000ft                    |   400  |   400  |  0.0%  |
 | L1: 4000ft                    |   420  |   420  |  0.0%  |
 | L2: AT-PD                     |   440  |   445  | +1.1%  |
-| L2: P-GD                      |   475  |   500  | +5.3% ⚠ |
+| L2: P-GD                      |   485  |   500  | +3.0%  |
 | L2: AO-PN                     |   500  |   510  | +2.0%  |
 | L2: AT-GD                     |   550  |   560  | +1.8%  |
 | L2: AO-GN                     |   625  |   620  | −0.8%  |
 | L3: HW 10kt ratio (avg)       | 0.760  | 0.750  | −1.3%  |
 | L3: TW 5kt ratio (avg)        | 1.187  | 1.20   | +1.1%  |
 | L4: +2% upslope               |   335  |   334  | −0.2%  |
-
-⚠ C172N landing P-GD shows 5.3% diff — borderline. Either a chart-reading
-   variance or the stored multiplier is slightly too high. The other 4 ops
-   on the same chart match within 2%, so leaving as-is and flagging.
 
 #### Cessna C152 (Air 2032+, 18/12/1984)
 

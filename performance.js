@@ -16,12 +16,14 @@ window.Performance = (function(){
   function windComponents(runwayHeading, windDir, windSpeed){
     // Both headings in degrees true (or all in mag, doesn't matter as long as consistent).
     // windDir is FROM direction (standard wind reporting).
-    // Returns: { headwind, crosswind }  (kt; crosswind unsigned, headwind negative = tailwind)
+    // Returns: { headwind, crosswind }  (kt).
+    //   headwind: positive = headwind, negative = tailwind
+    //   crosswind: positive = from the right (R), negative = from the left (L) relative to pilot
     let angle = (windDir - runwayHeading + 360) % 360;
     if (angle > 180) angle -= 360;
     const rad = angle * Math.PI / 180;
     const headwind = windSpeed * Math.cos(rad);
-    const crosswind = Math.abs(windSpeed * Math.sin(rad));
+    const crosswind = windSpeed * Math.sin(rad);
     return { headwind, crosswind };
   }
 
@@ -145,9 +147,9 @@ window.Performance = (function(){
     const slope_factor = 1 + (slope_pct * slope_pct_per_pct / 100);
     d *= slope_factor;
     const wind_factor = computeWindFactor(data.wind_factor_takeoff || data.wind_factor, wind_component_kt);
-    d *= wind_factor;
+    d *= wind_factor.value;
     if (wet) d *= 1.15;
-    return { distance: d, d_ppd, op_mult, weight_mult, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, d_ppd, op_mult, weight_mult, slope_factor, wind_factor: wind_factor.value, wind_out_of_range: wind_factor.outOfRange, wind_oor_reason: wind_factor.reason, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function pchartLandingDistance(data, elev_ft, operation, slope_pct, wind_component_kt, wet){
@@ -168,22 +170,24 @@ window.Performance = (function(){
     const slope_factor = 1 - (slope_pct * slope_pct_per_pct / 100);
     d *= slope_factor;
     const wind_factor = computeWindFactor(data.wind_factor_landing || data.wind_factor, wind_component_kt);
-    d *= wind_factor;
+    d *= wind_factor.value;
     if (wet) d *= 1.15;
-    return { distance: d, d_ppd, op_mult, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, d_ppd, op_mult, slope_factor, wind_factor: wind_factor.value, wind_out_of_range: wind_factor.outOfRange, wind_oor_reason: wind_factor.reason, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function computeWindFactor(wf, wind_kt){
     if (!wf) wf = { headwind_pct_per_kt: 0.015, tailwind_pct_per_kt: 0.06, max_headwind_kt: 20, max_tailwind_kt: 5 };
+    let factor, outOfRange = false, reason = null;
     if (wind_kt >= 0){
-      // Headwind: reduces distance
       const capped = Math.min(wind_kt, wf.max_headwind_kt);
-      return 1 - wf.headwind_pct_per_kt * capped;
+      if (wind_kt > wf.max_headwind_kt){ outOfRange = true; reason = `Headwind ${wind_kt.toFixed(0)} kt exceeds chart limit ${wf.max_headwind_kt} kt`; }
+      factor = 1 - wf.headwind_pct_per_kt * capped;
     } else {
-      // Tailwind: increases distance
       const tail = Math.min(-wind_kt, wf.max_tailwind_kt);
-      return 1 + wf.tailwind_pct_per_kt * tail;
+      if (-wind_kt > wf.max_tailwind_kt){ outOfRange = true; reason = `Tailwind ${(-wind_kt).toFixed(0)} kt exceeds chart limit ${wf.max_tailwind_kt} kt`; }
+      factor = 1 + wf.tailwind_pct_per_kt * tail;
     }
+    return { value: factor, outOfRange, reason };
   }
 
   // Bilinear interpolation/extrapolation over a PA × OAT grid.
@@ -253,15 +257,11 @@ window.Performance = (function(){
     // Wind: AC91-3 standard 1.5% per HW kt, 6% per TW kt (applied in FM mode on top of FM table values).
     // Note: NZ P-chart family uses different chart-baked factors (2.5% HW, 3.7-4.0% TW); those are stored
     // per-aircraft in `wind_factor_takeoff` / `wind_factor_landing` and applied only in P-chart mode.
-    let wind_factor;
-    if (wind_kt >= 0){
-      wind_factor = 1 - 0.015 * Math.min(wind_kt, 20);
-    } else {
-      wind_factor = 1 + 0.06 * Math.min(-wind_kt, 5);
-    }
+    const wfTo = computeWindFactor({ headwind_pct_per_kt: 0.015, tailwind_pct_per_kt: 0.06, max_headwind_kt: 20, max_tailwind_kt: 5 }, wind_kt);
+    const wind_factor = wfTo.value;
     d *= wind_factor;
     if (wet) d *= 1.15;
-    return { distance: d, surf_factor, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, surf_factor, slope_factor, wind_factor, wind_out_of_range: wfTo.outOfRange, wind_oor_reason: wfTo.reason, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function afmFactorsLanding(ac_afm, pa_ft, oat_c, surface, slope_pct, wind_kt, wet){
@@ -290,15 +290,11 @@ window.Performance = (function(){
     d *= surf_factor;
     const slope_factor = 1 - (slope_pct * 5 / 100);
     d *= slope_factor;
-    let wind_factor;
-    if (wind_kt >= 0){
-      wind_factor = 1 - 0.015 * Math.min(wind_kt, 20);
-    } else {
-      wind_factor = 1 + 0.06 * Math.min(-wind_kt, 5);
-    }
+    const wfLd = computeWindFactor({ headwind_pct_per_kt: 0.015, tailwind_pct_per_kt: 0.06, max_headwind_kt: 20, max_tailwind_kt: 5 }, wind_kt);
+    const wind_factor = wfLd.value;
     d *= wind_factor;
     if (wet) d *= 1.15;
-    return { distance: d, surf_factor, slope_factor, wind_factor, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, surf_factor, slope_factor, wind_factor, wind_out_of_range: wfLd.outOfRange, wind_oor_reason: wfLd.reason, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   // ---- Envelope helpers ----
