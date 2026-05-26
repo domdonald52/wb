@@ -148,7 +148,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v65';
+  const APP_VERSION = 'wb-v66';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1560,23 +1560,45 @@ const App = (function(){
     const wcEl = document.getElementById(k.windCompId);
     if (wcEl){
       if (w.mode === 'dirspeed' && w.speed > 0){
-        // Crosswind pill: green (within club), amber (over club but within demo), red (over demo)
-        const ac = fleet.find(a => a.id === selectedId);
-        const demo = ac && ac.crosswind_demonstrated_kt;
-        const club = ac && ac.crosswind_club_kt;
-        let pill = '';
-        const xw = Math.abs(crosswind);
-        if (club && demo){
-          if (xw <= club) pill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(22,163,74,0.18);color:#16a34a;margin-left:6px" title="within club limit ${club} kt">\u2713 ${club} kt club</span>`;
-          else if (xw <= demo) pill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(217,119,6,0.18);color:#d97706;margin-left:6px" title="over club ${club} kt, within demo ${demo} kt">\u26a0 over ${club} kt club</span>`;
-          else pill = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.18);color:#dc2626;margin-left:6px" title="exceeds demo ${demo} kt">\u2717 NO-GO exceeds ${demo} kt demo</span>`;
-        } else if (club || demo){
-          const lim = club || demo;
-          const what = club ? 'club' : 'demo';
-          if (xw <= lim) pill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(22,163,74,0.18);color:#16a34a;margin-left:6px">\u2713 ${lim} kt ${what}</span>`;
-          else pill = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.18);color:#dc2626;margin-left:6px">\u2717 exceeds ${lim} kt ${what}</span>`;
-        }
-        wcEl.innerHTML = `\u2192 Headwind: <strong>${headwind.toFixed(1)} kt</strong> \u00b7 Crosswind: <strong>${crosswind.toFixed(1)} kt</strong>${pill}`;
+        wcEl.innerHTML = (function(){
+          // Crosswind pill (existing logic)
+          const ac = fleet.find(a => a.id === selectedId);
+          const demo = ac && ac.crosswind_demonstrated_kt;
+          const club = ac && ac.crosswind_club_kt;
+          let xwPill = '';
+          const xw = Math.abs(crosswind);
+          if (club && demo){
+            if (xw <= club) xwPill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(22,163,74,0.18);color:#16a34a;margin-left:6px" title="within club limit ${club} kt">\u2713 ${club} kt club</span>`;
+            else if (xw <= demo) xwPill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(217,119,6,0.18);color:#d97706;margin-left:6px" title="over club ${club} kt, within demo ${demo} kt">\u26a0 over ${club} kt club</span>`;
+            else xwPill = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.18);color:#dc2626;margin-left:6px" title="exceeds demo ${demo} kt">\u2717 NO-GO exceeds ${demo} kt demo</span>`;
+          } else if (club || demo){
+            const lim = club || demo, what = club ? 'club' : 'demo';
+            if (xw <= lim) xwPill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(22,163,74,0.18);color:#16a34a;margin-left:6px">\u2713 ${lim} kt ${what}</span>`;
+            else xwPill = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.18);color:#dc2626;margin-left:6px">\u2717 exceeds ${lim} kt ${what}</span>`;
+          }
+          // Tailwind pill
+          let twPill = '';
+          if (headwind < 0){
+            const tw = Math.abs(headwind);
+            const reciprocalHdg = (runway.heading + 180) % 360;
+            const baseIdent = (runway.ident || '').split(/\s|\//)[0].replace(/-?\d+[LRC]?$/, '');
+            const recip = runways.find(rw => {
+              const diff = Math.abs(((rw.heading - reciprocalHdg + 540) % 360) - 180);
+              return diff <= 10 && (rw.ident || '').startsWith(baseIdent);
+            });
+            const recipNote = recip ? ` \u2014 consider <strong>${recip.ident}</strong>` : '';
+            if (tw <= 5) twPill = `<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(217,119,6,0.18);color:#d97706;margin-left:6px">\u26a0 Tailwind${recipNote}</span>`;
+            else twPill = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(220,38,38,0.18);color:#dc2626;margin-left:6px">\u2717 Tailwind > 5 kt${recipNote}</span>`;
+          }
+          // Crosswind direction (L/R from pilot's perspective on this runway heading)
+          const wc2 = window.Performance.windComponents(runway.heading, w.dir, w.speed);
+          const xwSide = wc2.crosswind > 0 ? 'R' : (wc2.crosswind < 0 ? 'L' : '');
+          const hwLabel = headwind >= 0
+            ? `Headwind: <strong>${headwind.toFixed(1)} kt</strong>`
+            : `Tailwind: <strong>${Math.abs(headwind).toFixed(1)} kt</strong>`;
+          const xwLabel = `Crosswind: <strong>${Math.abs(crosswind).toFixed(1)} kt${xwSide ? ' ' + xwSide : ''}</strong>`;
+          return `\u2192 ${hwLabel}${twPill} \u00b7 ${xwLabel}${xwPill}`;
+        })();
       } else if (w.mode === 'component' && w.headwind_component !== 0){
         wcEl.innerHTML = '';
       } else {
@@ -1602,6 +1624,8 @@ const App = (function(){
   }
 
   function computeAndRenderPerf(){
+    const bannerTopReset = document.getElementById('perf-banner-top');
+    if (bannerTopReset) bannerTopReset.innerHTML = '';
     const ac = fleet.find(a => a.id === selectedId);
     if (!ac) return;
     const rTo = perfInput.to_runway;
@@ -1870,8 +1894,10 @@ const App = (function(){
         else summaryBanner = `<div class="banner ok" style="margin:0 0 8px">\u2713 Within all performance limits.</div>`;
       }
 
+      const bannerTop = document.getElementById('perf-banner-top');
+      if (bannerTop) bannerTop.innerHTML = summaryBanner;
+
       host.innerHTML =
-        summaryBanner +
         (methodNote ? `<div style="background:var(--panel-2);padding:8px 10px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5">${methodNote}</div>` : "") +
         chartNotes +
         windWarning +
