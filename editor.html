@@ -62,6 +62,8 @@ h1{font-size:18px;margin:0 0 4px;color:var(--accent)}
   <button onclick="newFile()">New file</button>
   <button onclick="document.getElementById('open-file').click()">Open file…</button>
   <input type="file" id="open-file" accept="application/json" style="display:none" onchange="openFile(event)">
+  <button onclick="document.getElementById('append-file').click()" title="Add aircraft and/or runways from another file without replacing current state">Append from file…</button>
+  <input type="file" id="append-file" accept="application/json" style="display:none" onchange="appendFile(event)">
   <button class="primary" onclick="saveFile()">Save as JSON…</button>
   <button class="danger" onclick="if(confirm('Discard all changes?')) newFile()">Discard</button>
 </div>
@@ -204,6 +206,73 @@ function ingestFile(j){
     return;
   }
   applyMeta(); renderLists();
+}
+
+function appendFile(e){
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const j = JSON.parse(ev.target.result);
+      appendData(j, f.name);
+    } catch(err){ alert('Could not parse JSON: ' + err.message); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+}
+
+// Append aircraft/runways from a file to the current state instead of replacing.
+// Duplicate detection: aircraft by `reg`; runways by ident+heading+surface.
+function appendData(j, filename){
+  let newAircraft = [], newRunways = [];
+  if (Array.isArray(j)){
+    if (j.length && (j[0].ident !== undefined || j[0].heading !== undefined)){
+      newRunways = j.map(stripIdsRunway);
+    } else if (j.length && (j[0].reg !== undefined || j[0].type !== undefined)){
+      newAircraft = j.map(stripIdsAircraft);
+    } else {
+      alert('Could not identify the array contents.');
+      return;
+    }
+  } else if (j && typeof j === 'object'){
+    if (Array.isArray(j.aircraft)) newAircraft = j.aircraft.map(stripIdsAircraft);
+    if (Array.isArray(j.runways))  newRunways  = j.runways.map(stripIdsRunway);
+  } else {
+    alert('Could not parse: expected JSON object or array.');
+    return;
+  }
+  if (!newAircraft.length && !newRunways.length){ alert('No aircraft or runways to append.'); return; }
+
+  const acDup = newAircraft.filter(a => state.aircraft.some(x => x.reg && x.reg === a.reg));
+  const rwSig = r => `${(r.ident||'').trim().toLowerCase()}|${r.heading}|${r.surface||'paved'}`;
+  const rwDup = newRunways.filter(r => state.runways.some(x => rwSig(x) === rwSig(r)));
+
+  let acAction = 'add', rwAction = 'add';
+  if (acDup.length){
+    acAction = confirm(`${acDup.length} of ${newAircraft.length} aircraft match existing registrations:\n\n${acDup.slice(0,6).map(a => '  \u2022 ' + a.reg).join('\n')}${acDup.length>6?'\n  \u2026':''}\n\nOK = overwrite existing\nCancel = skip duplicates (add only new ones)`) ? 'overwrite' : 'skip';
+  }
+  if (rwDup.length){
+    rwAction = confirm(`${rwDup.length} of ${newRunways.length} runways match existing entries:\n\n${rwDup.slice(0,6).map(r => '  \u2022 ' + r.ident + ' (' + (r.surface||'paved') + ')').join('\n')}${rwDup.length>6?'\n  \u2026':''}\n\nOK = overwrite existing\nCancel = skip duplicates`) ? 'overwrite' : 'skip';
+  }
+
+  let acAdded = 0, acReplaced = 0;
+  newAircraft.forEach(incoming => {
+    const idx = state.aircraft.findIndex(x => x.reg && x.reg === incoming.reg);
+    if (idx >= 0){
+      if (acAction === 'overwrite'){ state.aircraft[idx] = incoming; acReplaced++; }
+    } else { state.aircraft.push(incoming); acAdded++; }
+  });
+
+  let rwAdded = 0, rwReplaced = 0;
+  newRunways.forEach(incoming => {
+    const idx = state.runways.findIndex(x => rwSig(x) === rwSig(incoming));
+    if (idx >= 0){
+      if (rwAction === 'overwrite'){ state.runways[idx] = incoming; rwReplaced++; }
+    } else { state.runways.push(incoming); rwAdded++; }
+  });
+
+  renderLists();
+  toast(`Appended from ${filename}: ${acAdded} aircraft added (${acReplaced} updated), ${rwAdded} runways added (${rwReplaced} updated)`);
 }
 
 function stripIdsAircraft(a){

@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v76';
+  const APP_VERSION = 'wb-v77';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
