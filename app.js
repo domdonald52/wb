@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v73';
+  const APP_VERSION = 'wb-v75';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -172,6 +172,21 @@ const App = (function(){
   const fmtArm = (n, ac) => fmt(n, ac.units === 'metric' ? 0 : 2);
 
   // ---- storage ----
+  // Natural alphanumeric collator: "NZWN 16" < "NZWN 34" (numeric segments compared as numbers)
+  const _natCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  function sortedFleet(){
+    return [...fleet].sort((a, b) => _natCollator.compare(a.reg || '', b.reg || ''));
+  }
+  function sortedRunways(list){
+    // Sort by ident (alphanumeric), then by surface (grass before paved/seal)
+    const surfRank = s => (s === 'grass' ? 0 : 1);
+    return [...(list || runways)].sort((a, b) => {
+      const c = _natCollator.compare(a.ident || '', b.ident || '');
+      if (c !== 0) return c;
+      return surfRank(a.surface) - surfRank(b.surface);
+    });
+  }
+
   function migrate(ac){
     if (!ac.scenarios) ac.scenarios = [];
     if (ac.pchart_id === undefined) ac.pchart_id = null;
@@ -452,7 +467,7 @@ const App = (function(){
     if (fleet.length === 0){
       sel.innerHTML = '<option value="">— no aircraft —</option>';
     } else {
-      sel.innerHTML = fleet.map(ac =>
+      sel.innerHTML = sortedFleet().map(ac =>
         `<option value="${ac.id}" ${ac.id === selectedId ? 'selected' : ''}>${ac.reg} — ${ac.type}</option>`
       ).join('');
     }
@@ -467,9 +482,33 @@ const App = (function(){
   }
 
   function selectAircraft(id){
+    const isAircraftChange = (id !== selectedId);
     selectedId = id;
     saveSelected();
+    if (isAircraftChange){
+      // Reset W&B state — station weights and fuel are aircraft-specific and not meaningful
+      // across aircraft changes. Performance tab recalculates automatically; the W&B tab
+      // needs explicit reset of inputs.
+      stationValues[id] = {};
+      if (fuelInput[id]) delete fuelInput[id];
+      _pendingWbFlash = true;
+    }
     renderAll();
+  }
+  let _pendingWbFlash = false;
+
+  // CSS flash animation, applied briefly to fields that just changed because of an
+  // aircraft switch so the pilot sees they've been reset.
+  function _flashChangedWbFields(){
+    if (!_pendingWbFlash) return;
+    _pendingWbFlash = false;
+    const fields = document.querySelectorAll('#stations-card input, #fuel-controls input');
+    fields.forEach(el => {
+      el.style.transition = 'background-color 0.5s';
+      const orig = el.style.backgroundColor;
+      el.style.backgroundColor = 'rgba(217,119,6,0.30)';
+      setTimeout(() => { el.style.backgroundColor = orig; }, 1200);
+    });
   }
 
   function toggleAcMenu(event){
@@ -512,7 +551,7 @@ const App = (function(){
       host.innerHTML = '<p style="color:var(--muted);font-size:13px">No aircraft yet. Tap "+ Add new aircraft" below.</p>';
       return;
     }
-    host.innerHTML = fleet.map(ac => `
+    host.innerHTML = sortedFleet().map(ac => `
       <div class="manage-row">
         <div class="info">
           <div class="name">${ac.reg}${ac.source ? ` <span style="font-size:10px;font-weight:normal;color:var(--muted);background:var(--panel-2);padding:1px 5px;border-radius:6px;margin-left:4px">${ac.source}</span>` : ''}</div>
@@ -585,7 +624,7 @@ const App = (function(){
     const host = document.getElementById('fuel-controls');
     const titleEl = document.getElementById('fuel-card-title');
     const fc = fuelInput[ac.id] = fuelInput[ac.id] || {};
-    if (fc.fuel === undefined) fc.fuel = ac.usable_fuel;
+    if (fc.fuel === undefined) fc.fuel = 0; // reset = empty input, pilot enters explicitly
     if (fc.duration === undefined) fc.duration = 1.0;
 
     if (mode === 'forward'){
@@ -1450,7 +1489,7 @@ const App = (function(){
     const surfaceLabel = s => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'}[s] || s || 'Paved');
     const curId = _selId(side);
     sel.innerHTML = (curId ? '<option value="">— none (clear selection) —</option>' : '<option value="">— select a runway —</option>') +
-      runways.map(rw => {
+      sortedRunways().map(rw => {
         const parts = (rw.ident || '').trim().split(/\s+/);
         const icao = parts[0] || '?';
         const dir = parts.slice(1).join(' ') || '?';
@@ -2423,7 +2462,7 @@ const App = (function(){
       host.innerHTML = '<p style="color:var(--muted);font-size:13px">No runways saved yet. Use "Add new runway" to create one.</p>';
       return;
     }
-    host.innerHTML = runways.map(rw => `
+    host.innerHTML = sortedRunways().map(rw => `
       <div style="display:flex;align-items:center;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
         <div style="flex:1">
           <div style="font-weight:600">${rw.ident || '(no ident)'}${rw.source ? ` <span style="font-size:10px;font-weight:normal;color:var(--muted);background:var(--panel-2);padding:1px 5px;border-radius:6px;margin-left:4px">${rw.source}</span>` : ''}</div>
@@ -3100,10 +3139,30 @@ const App = (function(){
   }
   function saveClubSyncs(){ localStorage.setItem(CLUB_SYNCS_KEY, JSON.stringify(clubSyncs)); }
 
+  function _normaliseClubUrl(url){
+    url = url.trim();
+    // OneDrive personal share (1drv.ms) → API direct-content URL
+    if (/^https?:\/\/(1drv\.ms|onedrive\.live\.com)\//i.test(url)){
+      try {
+        const b64 = btoa(url).replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-');
+        return 'https://api.onedrive.com/v1.0/shares/u!' + b64 + '/root/content';
+      } catch(e){ return url; }
+    }
+    // Google Drive share link → direct download
+    // https://drive.google.com/file/d/{ID}/view?usp=sharing  →  https://drive.google.com/uc?export=download&id={ID}
+    const gd = url.match(/^https?:\/\/drive\.google\.com\/file\/d\/([^/]+)/i);
+    if (gd) return 'https://drive.google.com/uc?export=download&id=' + gd[1];
+    // Google Drive open?id= style
+    const gd2 = url.match(/^https?:\/\/drive\.google\.com\/open\?id=([^&]+)/i);
+    if (gd2) return 'https://drive.google.com/uc?export=download&id=' + gd2[1];
+    return url;
+  }
+
   function _fetchClubFile(url){
+    const realUrl = _normaliseClubUrl(url);
     // Cache-bust so Drive/OneDrive return fresh content
-    const sep = url.includes('?') ? '&' : '?';
-    return fetch(url + sep + '_t=' + Date.now(), { cache: 'no-store' })
+    const sep = realUrl.includes('?') ? '&' : '?';
+    return fetch(realUrl + sep + '_t=' + Date.now(), { cache: 'no-store' })
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(j => {
         if (!j || typeof j !== 'object') throw new Error('Not a valid JSON object');
@@ -3152,6 +3211,7 @@ const App = (function(){
 
   function syncFromClub(id){
     const s = clubSyncs.find(x => x.id === id); if (!s) return;
+    closeMenu(); // close main menu so disclaimer + diff dialogs aren't hidden behind it
     const proceed = () => {
       _fetchClubFile(s.url)
         .then(j => _applyClubSync(s, j))
@@ -3373,6 +3433,7 @@ const App = (function(){
       renderScenarioSelect();
       if (mode === 'performance') renderPerformance();
     }
+    _flashChangedWbFields();
   }
   function setMode(m){
     mode = m;
