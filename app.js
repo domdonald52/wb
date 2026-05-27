@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v78';
+  const APP_VERSION = 'wb-v80';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1199,7 +1199,7 @@ const App = (function(){
 
     const rwyBox = (label, r, cond, w) => `
       <div style="border:1px solid #999;padding:8px;border-radius:4px">
-        <div style="font-weight:600;font-size:10pt;margin-bottom:4px">${label} <span style="font-weight:400;color:#a00;font-size:8pt">⚠ Verify against current AIP</span></div>
+        <div style="font-weight:600;font-size:10pt;margin-bottom:4px">${label}</div>
         <div style="font-size:9pt;line-height:1.5">
           <strong>${r.ident || '(no ident)'}</strong> \u00b7 Hdg ${r.heading}°M<br>
           Elev ${r.elev}\u2032 \u00b7 Slope ${r.slope}%<br>
