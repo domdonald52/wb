@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v77';
+  const APP_VERSION = 'wb-v78';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1486,50 +1486,139 @@ const App = (function(){
     host.innerHTML = parts.join(' \u00b7 ') + chip;
   }
 
+  // Custom combobox state (per side): cached typed filter, last committed id
+  const _combo = { to: { filter: '', open: false }, ld: { filter: '', open: false } };
+  function _rwyLabel(rw){
+    const surfaceLabel = s => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'}[s] || s || 'Paved');
+    const parts = (rw.ident || '').trim().split(/\s+/);
+    const icao = parts[0] || '?';
+    const dir = parts.slice(1).join(' ') || '?';
+    return `${icao} - ${dir} - ${surfaceLabel(rw.surface)}`;
+  }
+
   function renderSavedRunwaysPicker(side){
     const k = _side(side);
     const inputEl = document.getElementById(side === 'ld' ? 'saved-ld-rwy-input' : 'saved-to-rwy-input');
     const listEl  = document.getElementById(side === 'ld' ? 'saved-ld-rwy-list'  : 'saved-to-rwy-list');
     const hidden  = document.getElementById(k.pickerId);
     if (!inputEl || !listEl || !hidden) return;
-    const surfaceLabel = s => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'}[s] || s || 'Paved');
     const curId = _selId(side);
-    // Build datalist options. Each option's `value` is the visible label; data-id holds the rw id.
-    listEl.innerHTML = sortedRunways().map(rw => {
-      const parts = (rw.ident || '').trim().split(/\s+/);
-      const icao = parts[0] || '?';
-      const dir = parts.slice(1).join(' ') || '?';
-      const label = `${icao} - ${dir} - ${surfaceLabel(rw.surface)}`;
-      return `<option data-id="${rw.id}" value="${label.replace(/"/g,'&quot;')}"></option>`;
-    }).join('');
-    // Set the input's display text to the currently-selected runway
-    if (curId){
-      const cur = runways.find(rw => rw.id === curId);
-      if (cur){
-        const parts = (cur.ident || '').trim().split(/\s+/);
-        const icao = parts[0] || '?';
-        const dir = parts.slice(1).join(' ') || '?';
-        inputEl.value = `${icao} - ${dir} - ${surfaceLabel(cur.surface)}`;
+    // Render the input value to currently-selected runway (if any) — but only when not actively filtering
+    const state = _combo[side];
+    if (!state.open){
+      if (curId){
+        const cur = runways.find(rw => rw.id === curId);
+        if (cur) inputEl.value = _rwyLabel(cur);
+      } else {
+        inputEl.value = '';
       }
-    } else {
-      inputEl.value = '';
+      state.filter = '';
     }
     hidden.value = curId || '';
+    _renderComboList(side);
+    _bindComboHandlers(side);
   }
 
-  // Datalist-input doesn't fire onchange like a select; resolve the typed value to a runway id
-  function handleRunwayPickerInput(side, typedValue){
+  function _renderComboList(side){
     const listEl = document.getElementById(side === 'ld' ? 'saved-ld-rwy-list' : 'saved-to-rwy-list');
     if (!listEl) return;
-    const opts = Array.from(listEl.querySelectorAll('option'));
-    // Try exact match first; if no exact, do nothing (user is still typing)
-    const exact = opts.find(o => o.value === typedValue);
-    if (exact){
-      const id = exact.getAttribute('data-id');
-      loadSavedRunway(side, id);
-    } else if (typedValue === ''){
-      loadSavedRunway(side, '');
+    const state = _combo[side];
+    const curId = _selId(side);
+    const filter = (state.filter || '').toLowerCase().trim();
+    const items = sortedRunways().filter(rw => {
+      if (!filter) return true;
+      return _rwyLabel(rw).toLowerCase().includes(filter);
+    });
+    if (!items.length){
+      listEl.innerHTML = '<div class="empty">No runways match.</div>';
+      return;
     }
+    listEl.innerHTML = items.map(rw =>
+      `<div class="item ${rw.id===curId?'selected':''}" data-id="${rw.id}">${_rwyLabel(rw)}</div>`
+    ).join('');
+    // Bind item clicks (delegate via single handler is also fine; this is simpler for now)
+    listEl.querySelectorAll('.item').forEach(el => {
+      el.onclick = () => _selectComboItem(side, el.getAttribute('data-id'));
+    });
+  }
+
+  function _selectComboItem(side, id){
+    const state = _combo[side];
+    state.open = false;
+    state.filter = '';
+    const wrap = _comboWrap(side);
+    if (wrap) wrap.classList.remove('open');
+    loadSavedRunway(side, id);
+  }
+
+  function _comboWrap(side){
+    return document.querySelector(`.rwy-combo[data-side="${side}"]`);
+  }
+
+  // Track bound state so we don't re-bind on every render
+  const _comboBound = { to: false, ld: false };
+  function _bindComboHandlers(side){
+    if (_comboBound[side]) return;
+    _comboBound[side] = true;
+    const inputEl = document.getElementById(side === 'ld' ? 'saved-ld-rwy-input' : 'saved-to-rwy-input');
+    const wrap = _comboWrap(side);
+    if (!inputEl || !wrap) return;
+    const toggleBtn = wrap.querySelector('.rwy-combo-toggle');
+    const state = _combo[side];
+
+    const openList = () => {
+      state.open = true;
+      wrap.classList.add('open');
+      _renderComboList(side);
+    };
+    const closeList = () => {
+      state.open = false;
+      wrap.classList.remove('open');
+      // Restore display to current selection
+      const curId = _selId(side);
+      if (curId){
+        const cur = runways.find(rw => rw.id === curId);
+        if (cur) inputEl.value = _rwyLabel(cur);
+      } else {
+        inputEl.value = '';
+      }
+      state.filter = '';
+    };
+
+    inputEl.addEventListener('focus', () => {
+      // Clear text so the full list is visible; user can type to filter
+      state.filter = '';
+      inputEl.value = '';
+      openList();
+    });
+    inputEl.addEventListener('input', () => {
+      state.filter = inputEl.value;
+      if (!state.open) openList();
+      else _renderComboList(side);
+    });
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape'){ closeList(); inputEl.blur(); }
+      if (e.key === 'Enter'){
+        // Pick first matching item
+        const listEl = document.getElementById(side === 'ld' ? 'saved-ld-rwy-list' : 'saved-to-rwy-list');
+        const first = listEl.querySelector('.item');
+        if (first){ e.preventDefault(); _selectComboItem(side, first.getAttribute('data-id')); inputEl.blur(); }
+      }
+    });
+    if (toggleBtn){
+      toggleBtn.addEventListener('mousedown', (e) => {
+        // Use mousedown so we run before the input loses focus on click
+        e.preventDefault();
+        if (state.open){ closeList(); }
+        else { inputEl.focus(); }
+      });
+    }
+    // Click outside → close
+    document.addEventListener('click', (e) => {
+      if (!state.open) return;
+      if (wrap.contains(e.target)) return;
+      closeList();
+    });
   }
 
   // Hard cap + optional soft warning on a numeric input.
@@ -3544,7 +3633,7 @@ const App = (function(){
     exportData, importData, restoreDefaults, closeMenu,
     saveScenario, loadScenario, deleteScenario,
     printSheet,
-    setWindMode, setPerfMethod, loadSavedRunway, handleRunwayPickerInput, reverseRunway, copyRunway, copyFromTakeoff,
+    setWindMode, setPerfMethod, loadSavedRunway, reverseRunway, copyRunway, copyFromTakeoff,
     newRunway, editCurrentRunway, duplicateCurrentRunway,
     openRunwayConfig, closeRunwayConfig, saveRunwayConfig, saveRunwayConfigAsCopy, deleteRunway,
     toggleRwyMenu, closeRwyMenu,
