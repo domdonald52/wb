@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v75';
+  const APP_VERSION = 'wb-v76';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -195,6 +195,8 @@ const App = (function(){
     if (ac.crosswind_club_kt === undefined) ac.crosswind_club_kt = null;
     if (ac.group === undefined) ac.group = null;
     if (ac.source === undefined) ac.source = null; // free-text label, typically club name; null = manually added
+    if (ac.synced_at === undefined) ac.synced_at = null; // ISO string set when source was applied by sync
+    if (ac.edited_at === undefined) ac.edited_at = null; // ISO string set when pilot last edited the aircraft
     if (ac.fuel_total === undefined){ ac.fuel_total = ac.usable_fuel; ac.fuel_unusable = 0; }
     if (ac.id === 'pa38-demo' && !ac.pchart_id){
       ac.pchart_id = 'PA-38';
@@ -205,6 +207,8 @@ const App = (function(){
   function migrateRunway(r){
     if (r.group === undefined) r.group = null;
     if (r.source === undefined) r.source = null;
+    if (r.synced_at === undefined) r.synced_at = null;
+    if (r.edited_at === undefined) r.edited_at = null;
     if (!r.id) r.id = 'rwy-' + Math.random().toString(36).slice(2, 9);
     return r;
   }
@@ -1484,18 +1488,48 @@ const App = (function(){
 
   function renderSavedRunwaysPicker(side){
     const k = _side(side);
-    const sel = document.getElementById(k.pickerId);
-    if (!sel) return;
+    const inputEl = document.getElementById(side === 'ld' ? 'saved-ld-rwy-input' : 'saved-to-rwy-input');
+    const listEl  = document.getElementById(side === 'ld' ? 'saved-ld-rwy-list'  : 'saved-to-rwy-list');
+    const hidden  = document.getElementById(k.pickerId);
+    if (!inputEl || !listEl || !hidden) return;
     const surfaceLabel = s => ({paved:'Paved', grass:'Grass', metal:'Metal', rolled_earth:'Rolled earth', coral:'Coral'}[s] || s || 'Paved');
     const curId = _selId(side);
-    sel.innerHTML = (curId ? '<option value="">— none (clear selection) —</option>' : '<option value="">— select a runway —</option>') +
-      sortedRunways().map(rw => {
-        const parts = (rw.ident || '').trim().split(/\s+/);
+    // Build datalist options. Each option's `value` is the visible label; data-id holds the rw id.
+    listEl.innerHTML = sortedRunways().map(rw => {
+      const parts = (rw.ident || '').trim().split(/\s+/);
+      const icao = parts[0] || '?';
+      const dir = parts.slice(1).join(' ') || '?';
+      const label = `${icao} - ${dir} - ${surfaceLabel(rw.surface)}`;
+      return `<option data-id="${rw.id}" value="${label.replace(/"/g,'&quot;')}"></option>`;
+    }).join('');
+    // Set the input's display text to the currently-selected runway
+    if (curId){
+      const cur = runways.find(rw => rw.id === curId);
+      if (cur){
+        const parts = (cur.ident || '').trim().split(/\s+/);
         const icao = parts[0] || '?';
         const dir = parts.slice(1).join(' ') || '?';
-        return `<option value="${rw.id}" ${rw.id===curId?'selected':''}>${icao} - ${dir} - ${surfaceLabel(rw.surface)}</option>`;
-      }).join('');
-    sel.value = curId || '';
+        inputEl.value = `${icao} - ${dir} - ${surfaceLabel(cur.surface)}`;
+      }
+    } else {
+      inputEl.value = '';
+    }
+    hidden.value = curId || '';
+  }
+
+  // Datalist-input doesn't fire onchange like a select; resolve the typed value to a runway id
+  function handleRunwayPickerInput(side, typedValue){
+    const listEl = document.getElementById(side === 'ld' ? 'saved-ld-rwy-list' : 'saved-to-rwy-list');
+    if (!listEl) return;
+    const opts = Array.from(listEl.querySelectorAll('option'));
+    // Try exact match first; if no exact, do nothing (user is still typing)
+    const exact = opts.find(o => o.value === typedValue);
+    if (exact){
+      const id = exact.getAttribute('data-id');
+      loadSavedRunway(side, id);
+    } else if (typedValue === ''){
+      loadSavedRunway(side, '');
+    }
   }
 
   // Hard cap + optional soft warning on a numeric input.
@@ -1802,10 +1836,17 @@ const App = (function(){
     const host = document.getElementById('perf-results');
     const bannerTopEl = document.getElementById('perf-banner-top');
     if (activeMethod === 'none'){
-      if (bannerTopEl) bannerTopEl.innerHTML = `<div class="banner" style="margin:0 0 8px;background:var(--panel-2);border:1px solid var(--border);color:var(--muted)">No performance data for this aircraft. Set a P-chart or Flight Manual data source in the aircraft config.</div>`;
+      if (bannerTopEl) bannerTopEl.innerHTML = `<div class="banner warn" style="margin:0 0 8px">\u26a0 No performance data is configured for this aircraft. Set a P-chart or Flight Manual data source in the aircraft config to compute takeoff and landing distances.</div>`;
       host.innerHTML = '';
       document.getElementById('perf-breakdown').innerHTML = '';
-    } else {
+      const audit = document.getElementById('perf-audit');
+      if (audit) audit.innerHTML = '<em style="color:var(--muted)">No data source.</em>';
+      const xwHost = document.getElementById('perf-crosswind');
+      if (xwHost) xwHost.innerHTML = '';
+      const opCard2 = document.getElementById('perf-op-card');
+      if (opCard2) opCard2.classList.add('hidden');
+      return;
+    }
       const stat = (label, distance, available, ok, sub, altDistance, weightNote, casoNote, xwNote, oor) => {
         const pctOfLimit = (!oor && available > 0) ? (distance / available) * 100 : null;
         const hi = Math.round(distance * 1.1);
@@ -1988,7 +2029,6 @@ const App = (function(){
           ${ldWet ? `<tr><td>× Wet</td><td style="text-align:right">${fmt2(ld_result.wet_factor)}</td><td style="text-align:right">${ld_result.distance.toFixed(0)} m</td></tr>` : ''}
         </table>
       `;
-    }
 
     renderPerfAudit(activeMethod, pdata, adata);
 
@@ -2279,7 +2319,16 @@ const App = (function(){
         <div><label>Heading (°M)</label><input type="number" inputmode="decimal" id="rcfg-hdg" min="0" max="360" step="1" value="${rw.heading ?? ''}" placeholder="160"></div>
       </div>
       <div class="row">
-        <div><label>Source ${rw.source ? '<span style="font-size:10px;color:var(--muted);font-weight:normal">(synced)</span>' : ''}</label><input type="text" id="rcfg-source" value="${rw.source||''}" placeholder="e.g. Personal, Wellington Aero Club"></div>
+        <div><label>Source ${rw.source ? '<span style="font-size:10px;color:var(--muted);font-weight:normal">(synced)</span>' : ''}</label>
+          ${rw.source
+            ? `<input type="text" id="rcfg-source" value="${(rw.source||'').replace(/"/g,'&quot;')}" readonly style="opacity:0.7;cursor:not-allowed">
+               <div style="font-size:10px;color:var(--muted);margin-top:2px">
+                 ${rw.synced_at ? 'Last synced: ' + new Date(rw.synced_at).toLocaleDateString() : ''}
+                 ${rw.edited_at ? ' \u00b7 <span style="color:#d97706">Edited locally ' + new Date(rw.edited_at).toLocaleDateString() + '</span>' : ''}
+               </div>`
+            : `<input type="text" id="rcfg-source" value="${(rw.source||'').replace(/"/g,'&quot;')}" placeholder="e.g. Personal, my club">`
+          }
+        </div>
         <div></div>
       </div>
       <div class="row">
@@ -2353,7 +2402,10 @@ const App = (function(){
     let rwId;
     if (editingRunwayId){
       const rw = runways.find(x => x.id === editingRunwayId);
-      if (rw) Object.assign(rw, data);
+      if (rw){
+        Object.assign(rw, data);
+        if (rw.source && rw.synced_at) rw.edited_at = new Date().toISOString();
+      }
       rwId = editingRunwayId;
     } else {
       const newRw = { id: 'rwy-' + Math.random().toString(36).slice(2, 9), ...data };
@@ -2656,7 +2708,16 @@ const App = (function(){
         <div><label>Type</label><input type="text" id="cfg-type" value="${a.type||''}" placeholder="C172N"></div>
       </div>
       <div class="row">
-        <div><label>Source ${a.source ? '<span style="font-size:10px;color:var(--muted);font-weight:normal">(synced)</span>' : ''}</label><input type="text" id="cfg-source" value="${a.source||''}" placeholder="e.g. Personal, Wellington Aero Club"></div>
+        <div><label>Source ${a.source ? '<span style="font-size:10px;color:var(--muted);font-weight:normal">(synced)</span>' : ''}</label>
+          ${a.source
+            ? `<input type="text" id="cfg-source" value="${(a.source||'').replace(/"/g,'&quot;')}" readonly style="opacity:0.7;cursor:not-allowed">
+               <div style="font-size:10px;color:var(--muted);margin-top:2px">
+                 ${a.synced_at ? 'Last synced: ' + new Date(a.synced_at).toLocaleDateString() : ''}
+                 ${a.edited_at ? ' \u00b7 <span style="color:#d97706">Edited locally ' + new Date(a.edited_at).toLocaleDateString() + '</span>' : ''}
+               </div>`
+            : `<input type="text" id="cfg-source" value="${(a.source||'').replace(/"/g,'&quot;')}" placeholder="e.g. Personal, my club">`
+          }
+        </div>
         <div></div>
       </div>
       <div class="row">
@@ -3041,6 +3102,8 @@ const App = (function(){
       selectedId = a.id;
       saveSelected();
     }
+    // If this aircraft was synced from a club, mark it as edited locally so the pilot sees the override
+    if (a.source && a.synced_at) a.edited_at = new Date().toISOString();
     save();
     closeConfig();
     delete stationValues[a.id]; // clear cached station values so defaults apply
@@ -3223,6 +3286,7 @@ const App = (function(){
 
   function _applyClubSync(sync, file){
     const source = file.club_name;
+    const now = new Date().toISOString();
     let acAdded = 0, acReplaced = 0, acSkipped = 0;
     let rwAdded = 0, rwReplaced = 0, rwSkipped = 0;
 
@@ -3236,7 +3300,7 @@ const App = (function(){
       }
       file.aircraft.forEach(incoming => {
         const idx = fleet.findIndex(x => x.reg && x.reg === incoming.reg);
-        const tagged = { ...incoming, source };
+        const tagged = { ...incoming, source, synced_at: now, edited_at: null };
         if (idx >= 0){
           if (action === 'overwrite'){
             fleet[idx] = migrate({ ...tagged, id: fleet[idx].id });
@@ -3260,7 +3324,7 @@ const App = (function(){
       }
       file.runways.forEach(rw => {
         const dupIdx = runways.findIndex(existing => sig(existing) === sig(rw));
-        const tagged = { ...rw, source };
+        const tagged = { ...rw, source, synced_at: now, edited_at: null };
         if (dupIdx >= 0){
           if (action === 'overwrite'){
             runways[dupIdx] = migrateRunway({ ...tagged, id: runways[dupIdx].id });
@@ -3480,7 +3544,7 @@ const App = (function(){
     exportData, importData, restoreDefaults, closeMenu,
     saveScenario, loadScenario, deleteScenario,
     printSheet,
-    setWindMode, setPerfMethod, loadSavedRunway, reverseRunway, copyRunway, copyFromTakeoff,
+    setWindMode, setPerfMethod, loadSavedRunway, handleRunwayPickerInput, reverseRunway, copyRunway, copyFromTakeoff,
     newRunway, editCurrentRunway, duplicateCurrentRunway,
     openRunwayConfig, closeRunwayConfig, saveRunwayConfig, saveRunwayConfigAsCopy, deleteRunway,
     toggleRwyMenu, closeRwyMenu,
