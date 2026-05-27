@@ -375,8 +375,9 @@ function renderAcForm(a){
     </table>
     <hr>
     <h4>CG envelope <button onclick="addEnvPoint()" style="font-size:11px;padding:2px 7px;margin-left:6px">+ Add</button></h4>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 4px">At each weight, the forward (fwd) and aft CG arm limits. App linearly interpolates between rows.</p>
     <table class="stations-table" id="f-env-tbl">
-      <thead><tr><th>Weight (${wU})</th><th>Arm (${aU})</th><th></th></tr></thead>
+      <thead><tr><th>Weight (${wU})</th><th>Fwd arm (${aU})</th><th>Aft arm (${aU})</th><th></th></tr></thead>
       <tbody id="f-env-body"></tbody>
     </table>
     <hr>
@@ -442,7 +443,7 @@ function readStations(){
 
 function addEnvPoint(){
   const cur = readEnv();
-  cur.push({ weight: 0, arm: 0 });
+  cur.push({ w: 0, fwd: 0, aft: 0 });
   renderEnvBody(cur);
 }
 function removeEnvPoint(i){
@@ -454,8 +455,9 @@ function renderEnvBody(env){
   const body = document.getElementById('f-env-body');
   body.innerHTML = env.map((p,i) => `
     <tr>
-      <td><input type="number" step="0.1" value="${p.weight||0}"></td>
-      <td><input type="number" step="0.1" value="${p.arm||0}"></td>
+      <td><input type="number" step="0.1" value="${p.w ?? p.weight ?? 0}"></td>
+      <td><input type="number" step="0.1" value="${p.fwd ?? p.fwd_arm ?? p.arm ?? 0}"></td>
+      <td><input type="number" step="0.1" value="${p.aft ?? p.aft_arm ?? p.arm ?? 0}"></td>
       <td><span class="del" onclick="removeEnvPoint(${i})">×</span></td>
     </tr>`).join('');
 }
@@ -466,7 +468,11 @@ function readEnv(){
   const out = [];
   rows.forEach(tr => {
     const inputs = tr.querySelectorAll('input');
-    out.push({ weight: parseFloat(inputs[0].value) || 0, arm: parseFloat(inputs[1].value) || 0 });
+    out.push({
+      w: parseFloat(inputs[0].value) || 0,
+      fwd: parseFloat(inputs[1].value) || 0,
+      aft: parseFloat(inputs[2].value) || 0,
+    });
   });
   return out;
 }

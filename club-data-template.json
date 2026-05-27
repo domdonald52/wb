@@ -29,10 +29,8 @@
         { "name": "Baggage B", "arm": 3100, "max_weight": 23 }
       ],
       "envelope": [
-        { "weight": 770, "arm": 890 },
-        { "weight": 770, "arm": 1300 },
-        { "weight": 1043, "arm": 1041 },
-        { "weight": 1043, "arm": 1212 }
+        { "w": 770,  "fwd": 890,  "aft": 1300 },
+        { "w": 1043, "fwd": 1041, "aft": 1212 }
       ],
       "pchart_id": "C172N",
       "afm_id": "C172N",
