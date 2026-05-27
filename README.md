@@ -1,93 +1,134 @@
-# Weight & Balance — aero club PWA
+# Within Limits — Weight & Balance + Performance PWA
 
-A weight & balance calculator for light aircraft. Runs as a Progressive Web App: works in any browser, installs to the home screen on iOS/Android, works **offline** once loaded.
+A weight & balance and takeoff/landing performance calculator for light aircraft. Runs as a Progressive Web App: works in any browser, installs to the home screen on iOS/Android, works **offline** once loaded.
 
-## What it does
+## Repository layout
 
-- Stores a configurable fleet of aircraft, each with empty weight, empty arm, station arms, station limits, fuel arm, usable fuel, burn rate, MTOW/MLW/MZFW, reserve minutes, and a CG envelope (as a list of weight + fwd/aft arm vertices).
-- **Plan flight mode** — enter station weights, fuel on board, and flight duration. Shows takeoff weight, landing weight, takeoff CG, landing CG, all checked against MTOW/MLW and the envelope at both weights. The CG envelope plot shows both points and the dashed line between them (the fuel-burn track).
-- **Max fuel / endurance mode** — enter the station weights only. App tells you the maximum fuel you can carry (limited by MTOW, tank capacity, or CG), the resulting endurance to dry tanks, and the useful endurance after your configured reserve.
-- **Multi-leg mode** — model a flight with multiple legs, including fuel uplift between legs. Each leg has a duration and (from leg 2 onwards) an "uplift before leg" amount. The app shows start and end weight/CG for every leg, checks each transition against MTOW, MLW, and the envelope, and warns if the final fuel drops below your reserve. The envelope plot shows every leg's start and end as a connected trajectory.
-- **Scenarios** — save the current loading (stations, fuel, duration, mode, and legs) under a name like "Solo + full fuel" or "Instructor + student + 1.5 hr". Per aircraft. Recall with one tap. Travel with the aircraft via export/import.
-- **Print / PDF** — tap the print icon to render a single-page A4 W&B sheet showing: aircraft, date/PIC blanks, pass/fail banner, loading summary, headline results, and envelope chart. Use the browser's "Save as PDF" option to keep it as a file.
-- **Duplicate aircraft** — "Duplicate selected" on the aircraft list, or "Save as copy" inside the config editor. Faster than re-entering an aircraft from scratch when only the empty weight, empty arm, or registration differs.
-- **Performance (takeoff and landing distance)** — for aircraft with P-chart data, the Performance tab computes:
-  - Takeoff and landing distance required (over 50 ft), with all 6 CASO 4 operation lines (Private/Air Transport × Paved/Grass × Day/Night).
-  - Wind components from runway heading + wind direction/speed, or directly entered as headwind component.
-  - Slope, surface, and wet-runway corrections applied automatically.
-  - Crosswind component checked against the demonstrated and club crosswind limits (lower of the two wins).
-  - GO / NO-GO traffic-light vs TORA and LDA, with margin %.
-  - Recent runways (last 5) saved across sessions for quick re-entry — never authoritative, always re-verify against the current AIP.
-  - Currently the PA-38 has full P-chart data from the Wellington Aero Club P-charts (Dom Donald 2024). Other aircraft will say "no performance data" until P-charts are added.
-- All numbers checked: any out-of-limits condition triggers a red banner listing every violation.
-- Calculation breakdown table for each result (item, weight, arm, moment) so you or an examiner can audit the answer.
-- Supports both imperial (lb / in / US gal) and metric (kg / mm / L) units, per aircraft.
+This repository contains:
 
-## Deployment options
+### Main app (deploy to web host)
+- `index.html`, `app.js`, `sw.js`, `manifest.webmanifest`, `icon-192.png`, `icon-512.png`, `chart.umd.min.js`
+- `performance.js` — calculation engine (FM and P-chart modes)
+- `perf-pa38.js`, `perf-c172n.js`, `perf-c152.js` — per-aircraft P-chart and FM data
+
+### Maintainer / developer tools (use locally, no deployment needed)
+- `editor.html` — standalone editor for creating club JSON config files
+- `compare.html` — P-chart vs FM+AC91-3 method comparison (heatmap, charts)
+- `pchart-digitiser.html` — P-Chart Tracer for validating chart-derived numbers
+- `club-data-template.json` — sample club data file (starting point for maintainers)
+- `tools/validate-fm.js` — FM-mode validation script (Node)
+- `make_icons.py` — regenerate PWA icons
+
+### Documentation
+- `README.md` — this file
+- `VALIDATION.md` — audit trail of performance-data validation against source charts
+
+## What the main app does
+
+**Weight & Balance**
+- Stores a configurable fleet of aircraft (empty weight, empty arm, station arms+limits, fuel arm, usable fuel, burn rate, MTOW/MLW, CG envelope).
+- **Plan flight mode** — enter station weights, fuel, flight duration. Shows takeoff and landing weight/CG, both checked against MTOW/MLW and the envelope. CG plot shows both points + fuel-burn track.
+- **Max fuel / endurance mode** — enter passengers, app reports max possible fuel and resulting endurance with reserve.
+- **Multi-leg mode** — multiple legs with fuel uplift between them, every transition checked.
+- **Scenarios** — save loading patterns ("Solo + full fuel", "Instructor + student") per aircraft.
+- **Print / PDF** — A4 W&B sheet.
+- Imperial (lb/in/gal) and metric (kg/mm/L) units, per aircraft.
+
+**Performance (takeoff & landing distance)**
+- Two methods: **P-chart** (CASO 4-compliant chart-derived numbers) or **FM + AC91-3** (raw Flight Manual data layered with AC91-3 generic correction factors).
+- All 6 CASO operation lines for P-chart (Private/Air-Transport × Paved/Grass × Day/Night).
+- Wind, slope, surface, wet runway corrections.
+- Crosswind component checked against demonstrated and club limits.
+- Out-of-range wind (>5 kt TW, >20 kt HW) or out-of-envelope (PA/elev/OAT) forces NO-GO.
+- GO / NO-GO traffic-light vs TORA and LDA.
+- "Plan for the larger" view when both methods are available.
+
+**Club data sync**
+- Pull aircraft and runway data from a club-hosted JSON file (OneDrive or Google Drive direct link).
+- Multiple clubs supported — data tagged with source club name, visible in headers and config screens.
+- Disclaimer modal on every sync (PIC remains responsible for verification).
+
+## Maintainer tools
+
+### `editor.html` — Club data editor
+Standalone HTML file. Lets a maintainer (CFI, ops manager) build a club JSON file from scratch or by importing an existing file. Outputs a JSON file ready to drop in OneDrive/Drive.
+
+Workflow:
+1. Open `editor.html` in any browser
+2. Set club name, maintainer, etc.
+3. Add aircraft and runways (or open an existing club JSON / app export to start from)
+4. Save as JSON
+5. Drop the file in shared OneDrive/Drive folder, share with members
+
+The editor doesn't touch any installed app data — it's purely a file editor.
+
+### `compare.html` — Method comparison
+Standalone HTML file. Shows the discrepancy between P-chart and FM+AC91-3 methods across PA × OAT, operation type, wind, and weight. Useful for understanding when the two methods diverge.
+
+Requires the same folder to contain: `chart.umd.min.js`, `performance.js`, `perf-pa38.js`, `perf-c172n.js`, `perf-c152.js`.
+
+### `pchart-digitiser.html` — P-Chart Tracer
+Standalone tool for tracing values from P-chart images. Used to validate the perf-*.js data files. Includes de-skew, calibration, H/V lock. See `VALIDATION.md` for the validation methodology and results.
+
+### `tools/validate-fm.js`
+Node script that exercises every cell in the FM tables (where present) and compares against the engine. Run with `node tools/validate-fm.js` from the `wb/` directory.
+
+### `club-data-template.json`
+A starting point for club maintainers. Contains the JSON envelope structure with one sample aircraft and two sample runways. Copy this file, edit it, and use it as the source for `editor.html` or as a direct template.
+
+## Deployment
 
 ### Option 1 — open from disk
-Unzip the folder. Open `index.html` in any browser (Safari, Chrome, Edge, Firefox). Works immediately, but no install-to-home-screen.
+Unzip and open `index.html` in any browser. Works immediately, no install-to-home-screen.
 
 ### Option 2 — host on GitHub Pages or any static host (recommended)
-1. Create a free GitHub account, make a new repo, upload these files to it.
-2. In the repo's Settings → Pages, set "Source" to "Deploy from branch", choose `main` / root.
-3. After a minute you'll have a URL like `https://<your-name>.github.io/<repo>`.
-4. Open that URL on your iPhone/iPad/Android device.
-5. **iOS:** tap Share → Add to Home Screen. **Android Chrome:** tap menu → Install app.
-6. It now opens fullscreen with its own icon, works offline, and feels like a native app.
+1. Push this repo to GitHub.
+2. Settings → Pages → Source = main branch, root.
+3. Open the resulting URL on phone/tablet.
+4. **iOS:** Share → Add to Home Screen. **Android Chrome:** menu → Install app.
+5. Opens fullscreen, offline-capable.
 
-You can also host this on Netlify, Cloudflare Pages, Vercel, or your aero club's existing website — any static-file host works.
+Also works on Netlify, Cloudflare Pages, Vercel, or any static host.
 
-### Option 3 — App Store / Play Store (later, if needed)
-Wrap with [Capacitor](https://capacitorjs.com/). This converts the PWA into a native iOS and Android app you can submit to the stores. Worth it only if you want a store listing; not necessary for use.
+### Option 3 — App Store / Play Store
+Wrap with [Capacitor](https://capacitorjs.com/) if a store listing is needed. Not necessary for use.
 
-## Configuring your aircraft
+## Configuring aircraft
 
-The app ships with sample numbers for a C152, C172N, PA-28-161, and PA-38. **These are illustrative — you must replace them with the numbers from each aircraft's individual weighing report and POH before flight planning.** Empty weight changes after every maintenance event, paint job, or avionics install.
+The app ships with sample data for C152, C172N, PA-28, PA-38. **These are illustrative — replace with values from each aircraft's individual weighing report and POH before flight planning.** Empty weight changes after every maintenance event.
 
-To edit: select the aircraft → "Edit selected". To add another: "+ Add aircraft".
+To edit: select the aircraft → "Edit selected". To add: "+ Add aircraft".
 
 For each aircraft you need:
-- **Empty weight + empty arm** — from the most recent weighing report (not the POH "typical" figures).
-- **Stations** — name, arm, max load, and a default occupant weight for each. Multi-zone baggage (C172 has Area 1 and Area 2) gets one station per zone.
-- **Fuel** — usable fuel in tank, fuel arm (may vary slightly with quantity in tip-tank aircraft; use the POH average), burn rate (POH average for the cruise phase you typically plan to).
-- **Limits** — MTOW, MLW (if different from MTOW; same for most light singles), MZFW (only if your POH gives one).
-- **CG envelope** — at least two (weight, fwd_arm, aft_arm) points. For a C172 the envelope is a trapezoid with the forward limit kinking aft at higher weights; you'd enter three points to capture the kink (e.g. 1500/35.0/47.3, 1950/35.0/47.3, 2300/38.5/47.3). The app linearly interpolates between adjacent points.
-- **Reserve minutes** — used by the max-fuel/endurance mode. VFR day = 30, night = 45, IFR = 45.
+- **Empty weight + empty arm** from the most recent weighing report (not the POH "typical").
+- **Stations** with name, arm, max load. Multi-zone baggage gets one station per zone.
+- **Fuel** — usable, arm, burn rate.
+- **Limits** — MTOW, MLW (if different).
+- **CG envelope** — at least 2 vertices (weight, fwd_arm, aft_arm). Linear interpolation between.
+- **Reserve minutes** — VFR day 30, night 45, IFR 45.
 
-## Sharing configs across club devices
+## Sharing configs
 
-Menu → Export all aircraft (JSON). Send the file by email or AirDrop. On the other device: Menu → Import aircraft (JSON). This is the simplest way to keep the clubhouse iPad and your phone in sync.
+Three options:
 
-If the club wants automatic syncing across many devices, that needs a small backend (Firebase, Supabase, or a tiny custom one). Easy to add later if you outgrow the manual export approach.
+1. **Manual** — Menu → Export → AirDrop / email the JSON → Import on other device.
+2. **Club sync** — Maintainer publishes a club JSON file to OneDrive/Drive; pilots add the URL once and pull updates on demand.
+3. **Editor-driven** — Maintainer uses `editor.html` to build the club JSON file, drops it in shared storage.
 
-## Safety note
+Approach (2) + (3) is the recommended workflow for a club.
 
-This is a tool to assist with planning, not a substitute for the POH or a pilot's own judgement. **Always:**
+## Safety
 
-- Verify the configured numbers match the current weighing report and POH for that specific airframe.
-- Cross-check the result against an independent calculation (a paper sheet or another tool) until you trust the app.
-- Sanity-check the result — if it says you're fine but you put 4 large adults and full tanks in a C152, something is wrong.
+This is a planning aid, not a substitute for the POH or pilot judgement. **Always:**
 
-The app is offered as-is with no warranty. The Pilot-in-Command is responsible for the safe loading of the aircraft.
+- Verify configured numbers match current weighing report and POH.
+- Cross-check against an independent calculation until you trust the app.
+- Sanity-check results — if it says you're fine but you put 4 large adults and full tanks in a C152, something is wrong.
+- For club-synced data: club is providing without warranty; PIC remains responsible.
 
-## Files
+The app is offered as-is with no warranty. The PIC is responsible for the safe loading and operation of the aircraft.
 
-- `index.html` — markup and styles
-- `app.js` — calculation, rendering, storage, configuration UI
-- `sw.js` — service worker for offline support
-- `manifest.webmanifest` — PWA install metadata
-- `icon-192.png`, `icon-512.png` — app icons
-- `make_icons.py` — Python script that generated the icons (re-run if you want to customise)
-- `verify.js`, `verify2.js` — small Node scripts that exercise the W&B math against known cases. Useful if you want to extend the calculation engine.
+## Validation
 
-## Coming next (discussed)
+Performance calculations have been validated against the original P-chart images for the Wellington Aero Club fleet. See `VALIDATION.md` for the full audit trail — 71 chart-traced test points across PA-38, C172N, C152, all within ±5% tolerance.
 
-
-- **Shared/central aircraft configs across devices** — separate discussion. Several routes (free Firebase/Supabase database, a GitHub-hosted JSON file the app pulls on launch, a tiny custom backend, or a "club admin exports + others import" workflow). The right answer depends on how many people will edit configs vs read them and how often the empty weights change.
-
-## Other possible enhancements
-
-- Crew database (pilot names with weights) so you can pick "Tom + Sarah" instead of typing kg.
-- Audit log (which pilot calculated W&B for which flight, with date/time) for club records.
-- Per-aircraft additional performance data for more types as the club fleet grows.

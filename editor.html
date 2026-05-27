@@ -1,0 +1,612 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>Within Limits — Club Data Editor</title>
+<style>
+:root{--bg:#0b1220;--panel:#16213e;--panel-2:#1f2c4d;--text:#e6e8eb;--muted:#9aa5b1;--accent:#5eb1ff;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--border:#2c3a5e}
+body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,sans-serif;padding:14px}
+h1{font-size:18px;margin:0 0 4px;color:var(--accent)}
+.lede{color:var(--muted);font-size:12px;margin-bottom:14px;max-width:800px}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.bar button{background:var(--panel-2);color:var(--text);border:1px solid var(--border);padding:6px 12px;border-radius:5px;cursor:pointer;font-size:13px}
+.bar button.primary{background:var(--accent);color:#000;border:none;font-weight:600}
+.bar button.danger{border-color:var(--bad);color:var(--bad)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:1400px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
+.card h2{font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.card h2 .count{font-size:11px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0}
+.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.meta-grid .row{display:flex;flex-direction:column;gap:3px}
+.meta-grid label{font-size:11px;color:var(--muted)}
+.meta-grid input{background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 7px;border-radius:4px;font-size:13px}
+.row-item{display:flex;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:5px;background:var(--bg)}
+.row-item .info{flex:1;min-width:0}
+.row-item .name{font-weight:600;font-size:13px}
+.row-item .desc{font-size:11px;color:var(--muted)}
+.row-item .actions{display:flex;gap:4px}
+.row-item button{background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:3px 7px;border-radius:4px;cursor:pointer;font-size:12px}
+.row-item button.danger{border-color:var(--bad);color:var(--bad)}
+.empty{color:var(--muted);font-size:12px;text-align:center;padding:20px;font-style:italic}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:none;align-items:flex-start;justify-content:center;z-index:50;padding:20px;overflow:auto}
+.modal-bg.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:18px;max-width:760px;width:100%;max-height:90vh;overflow:auto}
+.modal h3{margin:0 0 10px;font-size:15px}
+.modal .row{display:flex;gap:8px;margin-bottom:8px}
+.modal .row > div{flex:1;display:flex;flex-direction:column;gap:3px}
+.modal label{font-size:11px;color:var(--muted)}
+.modal input,.modal select,.modal textarea{background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 7px;border-radius:4px;font-size:13px;font-family:inherit}
+.modal hr{border:none;border-top:1px solid var(--border);margin:14px 0}
+.modal h4{font-size:13px;margin:4px 0 6px;color:var(--accent)}
+.modal .actions{display:flex;gap:8px;margin-top:12px}
+.modal .actions button{padding:7px 14px;border-radius:5px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);cursor:pointer;font-size:13px}
+.modal .actions button.primary{background:var(--accent);color:#000;border:none;font-weight:600}
+.modal .actions button.danger{border-color:var(--bad);color:var(--bad)}
+.stations-table{width:100%;font-size:12px;border-collapse:collapse;margin-top:4px}
+.stations-table th,.stations-table td{padding:3px;border-bottom:1px solid var(--border);text-align:left}
+.stations-table input{width:100%;padding:3px 5px;font-size:12px}
+.stations-table .del{cursor:pointer;color:var(--bad)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--accent);padding:10px 20px;border-radius:6px;font-size:13px;z-index:100;display:none}
+.toast.show{display:block}
+.footer{margin-top:24px;color:var(--muted);font-size:11px;max-width:800px}
+</style>
+</head><body>
+
+<h1>Within Limits — Club Data Editor</h1>
+<div class="lede">
+  Maintainer tool for building club aircraft &amp; runway JSON files. Edit locally, save the file, share via OneDrive/Google Drive.
+  This editor doesn't modify any installed Within Limits app data — open, edit, save, done.
+</div>
+
+<div class="bar">
+  <button onclick="newFile()">New file</button>
+  <button onclick="document.getElementById('open-file').click()">Open file…</button>
+  <input type="file" id="open-file" accept="application/json" style="display:none" onchange="openFile(event)">
+  <button class="primary" onclick="saveFile()">Save as JSON…</button>
+  <button class="danger" onclick="if(confirm('Discard all changes?')) newFile()">Discard</button>
+</div>
+
+<div class="card" style="max-width:1400px;margin-bottom:14px">
+  <h2>Club metadata</h2>
+  <div class="meta-grid">
+    <div class="row"><label>Club name (required)</label><input type="text" id="m-club-name" placeholder="Wellington Aero Club" oninput="state.meta.club_name = this.value"></div>
+    <div class="row"><label>Short name</label><input type="text" id="m-club-short" placeholder="WAC" oninput="state.meta.club_short_name = this.value"></div>
+    <div class="row"><label>Maintainer</label><input type="text" id="m-maintainer" placeholder="Name of person responsible for keeping this file current" oninput="state.meta.maintainer = this.value"></div>
+    <div class="row"><label>Last updated</label><input type="date" id="m-updated" oninput="state.meta.last_updated = this.value"></div>
+  </div>
+  <div class="row" style="display:flex;flex-direction:column;gap:3px">
+    <label style="font-size:11px;color:var(--muted)">Notes (optional)</label>
+    <textarea id="m-notes" rows="2" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 7px;border-radius:4px;font-size:13px;font-family:inherit;resize:vertical" placeholder="Optional notes for pilots (purpose, disclaimer, contact info)" oninput="state.meta.notes = this.value"></textarea>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Aircraft <span class="count" id="ac-count">0</span>
+      <button onclick="newAircraft()" style="margin-left:auto;background:var(--accent);color:#000;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px">+ Add</button>
+    </h2>
+    <div id="ac-list"></div>
+  </div>
+
+  <div class="card">
+    <h2>Runways <span class="count" id="rw-count">0</span>
+      <button onclick="newRunway()" style="margin-left:auto;background:var(--accent);color:#000;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px">+ Add</button>
+    </h2>
+    <div id="rw-list"></div>
+  </div>
+</div>
+
+<!-- Aircraft edit modal -->
+<div class="modal-bg" id="ac-modal">
+  <div class="modal">
+    <h3 id="ac-modal-title">Edit aircraft</h3>
+    <div id="ac-form"></div>
+    <div class="actions">
+      <button class="primary" onclick="saveAircraft()">Save</button>
+      <button onclick="closeAcModal()">Cancel</button>
+      <button class="danger" onclick="deleteAircraft()" id="ac-delete-btn" style="margin-left:auto">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Runway edit modal -->
+<div class="modal-bg" id="rw-modal">
+  <div class="modal" style="max-width:560px">
+    <h3 id="rw-modal-title">Edit runway</h3>
+    <div id="rw-form"></div>
+    <div class="actions">
+      <button class="primary" onclick="saveRunway()">Save</button>
+      <button onclick="closeRwModal()">Cancel</button>
+      <button class="danger" onclick="deleteRunway()" id="rw-delete-btn" style="margin-left:auto">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="footer">
+  This editor is a maintainer tool. Generated files are pulled by Within Limits when pilots add the file's URL to their app.
+  Pilots see the club name on each aircraft / runway they import. Always include accurate data and a clear maintainer contact in case of errors.
+  Pilots remain responsible for verifying all data against the current AIP and aircraft Flight Manual.
+</div>
+
+<script>
+// ============== State ==============
+let state = {
+  meta: { club_name: '', club_short_name: '', maintainer: '', last_updated: '', notes: '' },
+  aircraft: [],
+  runways: [],
+};
+let editingAcIdx = -1, editingRwIdx = -1;
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+function newFile(){
+  state = { meta: { club_name: '', club_short_name: '', maintainer: '', last_updated: new Date().toISOString().slice(0,10), notes: '' }, aircraft: [], runways: [] };
+  applyMeta(); renderLists();
+}
+
+function applyMeta(){
+  document.getElementById('m-club-name').value = state.meta.club_name || '';
+  document.getElementById('m-club-short').value = state.meta.club_short_name || '';
+  document.getElementById('m-maintainer').value = state.meta.maintainer || '';
+  document.getElementById('m-updated').value = state.meta.last_updated || '';
+  document.getElementById('m-notes').value = state.meta.notes || '';
+}
+
+// ============== File open/save ==============
+function openFile(e){
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const j = JSON.parse(ev.target.result);
+      ingestFile(j);
+      toast('Loaded ' + f.name);
+    } catch(err){ alert('Could not parse JSON: ' + err.message); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+}
+
+function ingestFile(j){
+  // Three possible shapes:
+  //   1. Club JSON: { club_name, aircraft: [...], runways: [...] }
+  //   2. App aircraft export: [ {reg, type, ...}, ... ]
+  //   3. App runways export: [ {ident, heading, ...}, ... ]
+  if (Array.isArray(j)){
+    if (j.length && (j[0].ident !== undefined || j[0].heading !== undefined)){
+      state.runways = j.map(stripIdsRunway);
+      toast(`Loaded ${j.length} runways from app export. Add club metadata above.`);
+    } else if (j.length && (j[0].reg !== undefined || j[0].type !== undefined)){
+      state.aircraft = j.map(stripIdsAircraft);
+      toast(`Loaded ${j.length} aircraft from app export. Add club metadata above.`);
+    } else {
+      alert('Could not identify the array contents. Expected aircraft or runway entries.');
+      return;
+    }
+  } else if (j && typeof j === 'object'){
+    state.meta = {
+      club_name: j.club_name || '',
+      club_short_name: j.club_short_name || '',
+      maintainer: j.maintainer || '',
+      last_updated: j.last_updated || '',
+      notes: j.notes || '',
+    };
+    state.aircraft = Array.isArray(j.aircraft) ? j.aircraft.map(stripIdsAircraft) : [];
+    state.runways = Array.isArray(j.runways) ? j.runways.map(stripIdsRunway) : [];
+  } else {
+    alert('Could not parse: expected JSON object or array.');
+    return;
+  }
+  applyMeta(); renderLists();
+}
+
+function stripIdsAircraft(a){
+  // Remove app-internal fields the editor doesn't need to preserve
+  const { id, scenarios, source, ...rest } = a;
+  return rest;
+}
+function stripIdsRunway(r){
+  const { id, source, ...rest } = r;
+  return rest;
+}
+
+function saveFile(){
+  if (!state.meta.club_name){
+    if (!confirm('Club name is empty. Pilots won\'t see a source label. Save anyway?')) return;
+  }
+  const out = {
+    version: 1,
+    club_name: state.meta.club_name,
+    club_short_name: state.meta.club_short_name || undefined,
+    last_updated: state.meta.last_updated || new Date().toISOString().slice(0,10),
+    maintainer: state.meta.maintainer || undefined,
+    notes: state.meta.notes || undefined,
+    aircraft: state.aircraft,
+    runways: state.runways,
+  };
+  // Strip undefined
+  Object.keys(out).forEach(k => out[k] === undefined && delete out[k]);
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safe = (state.meta.club_short_name || state.meta.club_name || 'club').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  a.href = url; a.download = safe + '-within-limits.json';
+  a.click();
+  toast('Saved ' + a.download);
+}
+
+// ============== Aircraft list ==============
+function renderLists(){
+  document.getElementById('ac-count').textContent = state.aircraft.length;
+  document.getElementById('rw-count').textContent = state.runways.length;
+  const ach = document.getElementById('ac-list');
+  if (!state.aircraft.length){
+    ach.innerHTML = '<div class="empty">No aircraft. Click + Add or open an existing file.</div>';
+  } else {
+    ach.innerHTML = state.aircraft.map((a,i) => `
+      <div class="row-item">
+        <div class="info">
+          <div class="name">${escape(a.reg || '(no reg)')} <span style="font-weight:400;color:var(--muted);font-size:12px">— ${escape(a.type || '')}</span></div>
+          <div class="desc">${(a.units==='metric'?'kg/mm':'lb/in')} · MTOW ${a.mtow||'?'} · ${(a.stations||[]).length} stations${a.pchart_id?' · P-chart:'+escape(a.pchart_id):''}${a.afm_id?' · FM:'+escape(a.afm_id):''}</div>
+        </div>
+        <div class="actions">
+          <button onclick="editAircraft(${i})">Edit</button>
+          <button onclick="duplicateAircraft(${i})">Dup</button>
+          <button class="danger" onclick="removeAircraft(${i})">×</button>
+        </div>
+      </div>`).join('');
+  }
+  const rwh = document.getElementById('rw-list');
+  if (!state.runways.length){
+    rwh.innerHTML = '<div class="empty">No runways. Click + Add or open an existing file.</div>';
+  } else {
+    rwh.innerHTML = state.runways.map((r,i) => `
+      <div class="row-item">
+        <div class="info">
+          <div class="name">${escape(r.ident || '(no ident)')}</div>
+          <div class="desc">${r.surface||'paved'} · hdg ${r.heading||'?'}° · elev ${r.elev||'?'}\u2032 · TORA ${r.tora||'?'} · LDA ${r.lda||'?'}${r.group!=null?' · Gp '+r.group:''}</div>
+        </div>
+        <div class="actions">
+          <button onclick="editRunway(${i})">Edit</button>
+          <button onclick="duplicateRunway(${i})">Dup</button>
+          <button class="danger" onclick="removeRunway(${i})">×</button>
+        </div>
+      </div>`).join('');
+  }
+}
+
+function escape(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ============== Aircraft editor ==============
+function blankAircraft(){
+  return {
+    reg: '', type: '', units: 'metric',
+    empty_weight: 0, empty_arm: 0,
+    mtow: 0, max_takeoff_weight: 0, max_landing_weight: 0,
+    fuel_kg_per_litre: 0.72, fuel_lb_per_gal: 6.01,
+    usable_fuel: 0, fuel_total: 0, fuel_unusable: 0, fuel_arm: 0, fuel_rate_lph: 0,
+    stations: [],
+    envelope: [],
+    pchart_id: null, afm_id: null,
+    crosswind_demonstrated_kt: null, crosswind_club_kt: null,
+  };
+}
+
+function newAircraft(){
+  editingAcIdx = -1;
+  document.getElementById('ac-modal-title').textContent = 'Add aircraft';
+  document.getElementById('ac-delete-btn').style.display = 'none';
+  renderAcForm(blankAircraft());
+  document.getElementById('ac-modal').classList.add('show');
+}
+function editAircraft(idx){
+  editingAcIdx = idx;
+  document.getElementById('ac-modal-title').textContent = 'Edit aircraft';
+  document.getElementById('ac-delete-btn').style.display = '';
+  renderAcForm(JSON.parse(JSON.stringify(state.aircraft[idx])));
+  document.getElementById('ac-modal').classList.add('show');
+}
+function duplicateAircraft(idx){
+  const copy = JSON.parse(JSON.stringify(state.aircraft[idx]));
+  copy.reg = (copy.reg || '') + '-COPY';
+  state.aircraft.push(copy);
+  renderLists();
+}
+function removeAircraft(idx){
+  if (!confirm(`Remove ${state.aircraft[idx].reg || 'this aircraft'}?`)) return;
+  state.aircraft.splice(idx, 1);
+  renderLists();
+}
+function closeAcModal(){ document.getElementById('ac-modal').classList.remove('show'); }
+
+function renderAcForm(a){
+  const isMetric = a.units === 'metric';
+  const wU = isMetric ? 'kg' : 'lb';
+  const aU = isMetric ? 'mm' : 'in';
+  document.getElementById('ac-form').innerHTML = `
+    <div class="row">
+      <div><label>Registration *</label><input type="text" id="f-reg" value="${escape(a.reg||'')}" placeholder="ZK-XYZ"></div>
+      <div><label>Type *</label><input type="text" id="f-type" value="${escape(a.type||'')}" placeholder="C172N"></div>
+    </div>
+    <div class="row">
+      <div><label>Units</label>
+        <select id="f-units" onchange="rerenderAcUnits()">
+          <option value="metric" ${isMetric?'selected':''}>Metric (kg/mm/L)</option>
+          <option value="imperial" ${!isMetric?'selected':''}>Imperial (lb/in/gal)</option>
+        </select>
+      </div>
+      <div><label>Fuel density (${isMetric?'kg/L':'lb/gal'})</label>
+        <input type="number" step="0.01" id="f-fdens" value="${isMetric ? (a.fuel_kg_per_litre||0.72) : (a.fuel_lb_per_gal||6.01)}">
+      </div>
+    </div>
+    <hr>
+    <h4>Airframe</h4>
+    <div class="row">
+      <div><label>Empty weight (${wU})</label><input type="number" step="0.1" id="f-ew" value="${a.empty_weight||0}"></div>
+      <div><label>Empty arm (${aU})</label><input type="number" step="0.1" id="f-ea" value="${a.empty_arm||0}"></div>
+    </div>
+    <div class="row">
+      <div><label>MTOW (${wU})</label><input type="number" step="0.1" id="f-mtow" value="${a.mtow||0}"></div>
+      <div><label>Max T/O weight (${wU})</label><input type="number" step="0.1" id="f-mtow2" value="${a.max_takeoff_weight||a.mtow||0}"></div>
+      <div><label>Max landing weight (${wU})</label><input type="number" step="0.1" id="f-mlw" value="${a.max_landing_weight||a.mtow||0}"></div>
+    </div>
+    <hr>
+    <h4>Fuel</h4>
+    <div class="row">
+      <div><label>Usable (${isMetric?'L':'gal'})</label><input type="number" step="0.1" id="f-fu" value="${a.usable_fuel||0}"></div>
+      <div><label>Total (${isMetric?'L':'gal'})</label><input type="number" step="0.1" id="f-ft" value="${a.fuel_total||a.usable_fuel||0}"></div>
+      <div><label>Unusable (${isMetric?'L':'gal'})</label><input type="number" step="0.1" id="f-fun" value="${a.fuel_unusable||0}"></div>
+    </div>
+    <div class="row">
+      <div><label>Fuel arm (${aU})</label><input type="number" step="0.1" id="f-farm" value="${a.fuel_arm||0}"></div>
+      <div><label>Burn rate (${isMetric?'L/hr':'gal/hr'})</label><input type="number" step="0.1" id="f-fr" value="${a.fuel_rate_lph||0}"></div>
+    </div>
+    <hr>
+    <h4>Stations <button onclick="addStation()" style="font-size:11px;padding:2px 7px;margin-left:6px">+ Add</button></h4>
+    <table class="stations-table" id="f-stations-tbl">
+      <thead><tr><th>Name</th><th>Arm (${aU})</th><th>Max wt (${wU})</th><th></th></tr></thead>
+      <tbody id="f-stations-body"></tbody>
+    </table>
+    <hr>
+    <h4>CG envelope <button onclick="addEnvPoint()" style="font-size:11px;padding:2px 7px;margin-left:6px">+ Add</button></h4>
+    <table class="stations-table" id="f-env-tbl">
+      <thead><tr><th>Weight (${wU})</th><th>Arm (${aU})</th><th></th></tr></thead>
+      <tbody id="f-env-body"></tbody>
+    </table>
+    <hr>
+    <h4>Performance data binding</h4>
+    <div class="row">
+      <div><label>P-chart ID</label><input type="text" id="f-pchart" value="${escape(a.pchart_id||'')}" placeholder="C172N (must match a perf-XXX.js file)"></div>
+      <div><label>FM ID</label><input type="text" id="f-afm" value="${escape(a.afm_id||'')}" placeholder="C172N (must match an AFM_DATA key)"></div>
+    </div>
+    <div class="row">
+      <div><label>Crosswind: demonstrated (kt)</label><input type="number" step="1" id="f-xwd" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="optional"></div>
+      <div><label>Crosswind: club limit (kt)</label><input type="number" step="1" id="f-xwc" value="${a.crosswind_club_kt ?? ''}" placeholder="optional"></div>
+    </div>
+  `;
+  // Stations
+  renderStationsBody(a.stations || []);
+  renderEnvBody(a.envelope || []);
+}
+
+function renderStationsBody(stations){
+  const body = document.getElementById('f-stations-body');
+  body.innerHTML = stations.map((s, i) => `
+    <tr>
+      <td><input type="text" data-station-field="name" data-i="${i}" value="${escape(s.name||'')}"></td>
+      <td><input type="number" step="0.1" data-station-field="arm" data-i="${i}" value="${s.arm||0}"></td>
+      <td><input type="number" step="0.1" data-station-field="max_weight" data-i="${i}" value="${s.max_weight||0}"></td>
+      <td><span class="del" onclick="removeStation(${i})">×</span></td>
+    </tr>`).join('');
+  body.dataset.count = stations.length;
+}
+window._currentStations = [];
+function rerenderAcUnits(){
+  // Capture current values, change units label, re-render
+  const a = readAcForm();
+  a.units = document.getElementById('f-units').value;
+  renderAcForm(a);
+}
+
+function addStation(){
+  const cur = readStations();
+  cur.push({ name: '', arm: 0, max_weight: 0 });
+  renderStationsBody(cur);
+}
+function removeStation(i){
+  const cur = readStations();
+  cur.splice(i, 1);
+  renderStationsBody(cur);
+}
+function readStations(){
+  const body = document.getElementById('f-stations-body');
+  if (!body) return [];
+  const rows = body.querySelectorAll('tr');
+  const out = [];
+  rows.forEach(tr => {
+    const inputs = tr.querySelectorAll('input');
+    out.push({
+      name: inputs[0].value,
+      arm: parseFloat(inputs[1].value) || 0,
+      max_weight: parseFloat(inputs[2].value) || 0,
+    });
+  });
+  return out;
+}
+
+function addEnvPoint(){
+  const cur = readEnv();
+  cur.push({ weight: 0, arm: 0 });
+  renderEnvBody(cur);
+}
+function removeEnvPoint(i){
+  const cur = readEnv();
+  cur.splice(i, 1);
+  renderEnvBody(cur);
+}
+function renderEnvBody(env){
+  const body = document.getElementById('f-env-body');
+  body.innerHTML = env.map((p,i) => `
+    <tr>
+      <td><input type="number" step="0.1" value="${p.weight||0}"></td>
+      <td><input type="number" step="0.1" value="${p.arm||0}"></td>
+      <td><span class="del" onclick="removeEnvPoint(${i})">×</span></td>
+    </tr>`).join('');
+}
+function readEnv(){
+  const body = document.getElementById('f-env-body');
+  if (!body) return [];
+  const rows = body.querySelectorAll('tr');
+  const out = [];
+  rows.forEach(tr => {
+    const inputs = tr.querySelectorAll('input');
+    out.push({ weight: parseFloat(inputs[0].value) || 0, arm: parseFloat(inputs[1].value) || 0 });
+  });
+  return out;
+}
+
+function readAcForm(){
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const n = id => parseFloat(v(id)) || 0;
+  const isMetric = v('f-units') === 'metric';
+  return {
+    reg: v('f-reg').trim(),
+    type: v('f-type').trim(),
+    units: v('f-units'),
+    empty_weight: n('f-ew'), empty_arm: n('f-ea'),
+    mtow: n('f-mtow'),
+    max_takeoff_weight: n('f-mtow2') || n('f-mtow'),
+    max_landing_weight: n('f-mlw') || n('f-mtow'),
+    fuel_kg_per_litre: isMetric ? n('f-fdens') : 0.72,
+    fuel_lb_per_gal:   isMetric ? 6.01 : n('f-fdens'),
+    usable_fuel: n('f-fu'), fuel_total: n('f-ft') || n('f-fu'), fuel_unusable: n('f-fun'),
+    fuel_arm: n('f-farm'), fuel_rate_lph: n('f-fr'),
+    stations: readStations(),
+    envelope: readEnv(),
+    pchart_id: v('f-pchart').trim() || null,
+    afm_id: v('f-afm').trim() || null,
+    crosswind_demonstrated_kt: v('f-xwd') === '' ? null : (parseFloat(v('f-xwd'))||null),
+    crosswind_club_kt:         v('f-xwc') === '' ? null : (parseFloat(v('f-xwc'))||null),
+  };
+}
+
+function saveAircraft(){
+  const a = readAcForm();
+  if (!a.reg){ alert('Registration is required.'); return; }
+  if (!a.type){ alert('Type is required.'); return; }
+  if (editingAcIdx >= 0){
+    state.aircraft[editingAcIdx] = a;
+  } else {
+    state.aircraft.push(a);
+  }
+  closeAcModal();
+  renderLists();
+}
+function deleteAircraft(){
+  if (editingAcIdx < 0) return;
+  if (!confirm(`Delete ${state.aircraft[editingAcIdx].reg}?`)) return;
+  state.aircraft.splice(editingAcIdx, 1);
+  closeAcModal();
+  renderLists();
+}
+
+// ============== Runway editor ==============
+function blankRunway(){
+  return { ident: '', heading: 0, elev: 0, slope: 0, tora: 0, lda: 0, surface: 'paved', group: null };
+}
+function newRunway(){
+  editingRwIdx = -1;
+  document.getElementById('rw-modal-title').textContent = 'Add runway';
+  document.getElementById('rw-delete-btn').style.display = 'none';
+  renderRwForm(blankRunway());
+  document.getElementById('rw-modal').classList.add('show');
+}
+function editRunway(idx){
+  editingRwIdx = idx;
+  document.getElementById('rw-modal-title').textContent = 'Edit runway';
+  document.getElementById('rw-delete-btn').style.display = '';
+  renderRwForm(state.runways[idx]);
+  document.getElementById('rw-modal').classList.add('show');
+}
+function duplicateRunway(idx){
+  const copy = JSON.parse(JSON.stringify(state.runways[idx]));
+  copy.ident = (copy.ident || '') + '-COPY';
+  state.runways.push(copy);
+  renderLists();
+}
+function removeRunway(idx){
+  if (!confirm(`Remove ${state.runways[idx].ident || 'this runway'}?`)) return;
+  state.runways.splice(idx, 1);
+  renderLists();
+}
+function closeRwModal(){ document.getElementById('rw-modal').classList.remove('show'); }
+
+function renderRwForm(r){
+  document.getElementById('rw-form').innerHTML = `
+    <div class="row">
+      <div style="flex:2"><label>Designator *</label><input type="text" id="r-ident" value="${escape(r.ident||'')}" placeholder="NZWN 16"></div>
+      <div><label>Heading (°M)</label><input type="number" step="1" id="r-hdg" value="${r.heading||0}"></div>
+    </div>
+    <div class="row">
+      <div><label>Elevation (ft)</label><input type="number" step="1" id="r-elev" value="${r.elev||0}"></div>
+      <div><label>Slope (%)</label><input type="number" step="0.1" id="r-slope" value="${r.slope||0}" placeholder="+ = uphill T/O direction"></div>
+    </div>
+    <div class="row">
+      <div><label>TORA (m)</label><input type="number" step="1" id="r-tora" value="${r.tora||0}"></div>
+      <div><label>LDA (m)</label><input type="number" step="1" id="r-lda" value="${r.lda||0}"></div>
+    </div>
+    <div class="row">
+      <div><label>Surface</label>
+        <select id="r-surface">
+          <option value="paved" ${(r.surface||'paved')==='paved'?'selected':''}>Paved</option>
+          <option value="grass" ${r.surface==='grass'?'selected':''}>Grass</option>
+          <option value="metal" ${r.surface==='metal'?'selected':''}>Metal</option>
+          <option value="rolled_earth" ${r.surface==='rolled_earth'?'selected':''}>Rolled earth</option>
+          <option value="coral" ${r.surface==='coral'?'selected':''}>Coral</option>
+        </select>
+      </div>
+      <div><label>Runway group</label>
+        <select id="r-group">
+          <option value="" ${r.group==null?'selected':''}>— not set —</option>
+          ${[1,2,3,4,5,6,7,8].map(g => `<option value="${g}" ${r.group===g?'selected':''}>${g}</option>`).join('')}
+        </select>
+      </div>
+    </div>`;
+}
+function saveRunway(){
+  const v = id => document.getElementById(id).value;
+  const n = id => parseFloat(v(id)) || 0;
+  const r = {
+    ident: v('r-ident').trim(),
+    heading: n('r-hdg'),
+    elev: n('r-elev'),
+    slope: n('r-slope'),
+    tora: n('r-tora'),
+    lda: n('r-lda'),
+    surface: v('r-surface'),
+    group: v('r-group') === '' ? null : parseInt(v('r-group'), 10),
+  };
+  if (!r.ident){ alert('Designator is required.'); return; }
+  if (editingRwIdx >= 0) state.runways[editingRwIdx] = r;
+  else state.runways.push(r);
+  closeRwModal();
+  renderLists();
+}
+function deleteRunway(){
+  if (editingRwIdx < 0) return;
+  if (!confirm(`Delete ${state.runways[editingRwIdx].ident}?`)) return;
+  state.runways.splice(editingRwIdx, 1);
+  closeRwModal();
+  renderLists();
+}
+
+// init
+newFile();
+</script>
+</body></html>

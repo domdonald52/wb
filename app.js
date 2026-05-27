@@ -122,6 +122,8 @@ const STORAGE_KEY = 'wb_fleet_v1';
 const SELECTED_KEY = 'wb_selected_v1';
 const RECENT_RUNWAYS_KEY = 'wb_recent_runways_v1';
 const RUNWAYS_KEY = 'wb_runways_v1';
+const CLUB_SYNCS_KEY = 'wb_club_syncs_v1';
+const CLUB_DISCLAIMER_ACK_KEY = 'wb_club_disclaimer_ack_v1';
 const SELECTED_TO_RUNWAY_KEY = 'wb_selected_to_runway_v1';
 const SELECTED_LD_RUNWAY_KEY = 'wb_selected_ld_runway_v1';
 const MAX_RECENT_RUNWAYS = 5;
@@ -148,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v72';
+  const APP_VERSION = 'wb-v73';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -177,10 +179,8 @@ const App = (function(){
     if (ac.crosswind_demonstrated_kt === undefined) ac.crosswind_demonstrated_kt = null;
     if (ac.crosswind_club_kt === undefined) ac.crosswind_club_kt = null;
     if (ac.group === undefined) ac.group = null;
+    if (ac.source === undefined) ac.source = null; // free-text label, typically club name; null = manually added
     if (ac.fuel_total === undefined){ ac.fuel_total = ac.usable_fuel; ac.fuel_unusable = 0; }
-    // One-time fix-up: the default PA-38 demo aircraft should be bound to the PA-38 P-chart.
-    // Existing installs from before P-chart support won't have this set; restore it now
-    // without disturbing user-edited fields.
     if (ac.id === 'pa38-demo' && !ac.pchart_id){
       ac.pchart_id = 'PA-38';
       if (ac.crosswind_demonstrated_kt == null) ac.crosswind_demonstrated_kt = 15;
@@ -188,8 +188,8 @@ const App = (function(){
     return ac;
   }
   function migrateRunway(r){
-    // ensure new fields exist; group=null means no Group check
     if (r.group === undefined) r.group = null;
+    if (r.source === undefined) r.source = null;
     if (!r.id) r.id = 'rwy-' + Math.random().toString(36).slice(2, 9);
     return r;
   }
@@ -456,7 +456,13 @@ const App = (function(){
         `<option value="${ac.id}" ${ac.id === selectedId ? 'selected' : ''}>${ac.reg} — ${ac.type}</option>`
       ).join('');
     }
-    document.getElementById('hdr-sub').textContent = selectedId ? (fleet.find(a => a.id === selectedId)?.reg || '') : 'no aircraft';
+    const _selAc = selectedId ? fleet.find(a => a.id === selectedId) : null;
+    const _hdr = document.getElementById('hdr-sub');
+    if (_selAc){
+      _hdr.innerHTML = `${_selAc.reg || ''}${_selAc.source ? ` <span style="opacity:0.7;font-size:11px">· ${_selAc.source}</span>` : ''}`;
+    } else {
+      _hdr.textContent = 'no aircraft';
+    }
     document.getElementById('calculator').classList.toggle('hidden', !selectedId);
   }
 
@@ -509,7 +515,7 @@ const App = (function(){
     host.innerHTML = fleet.map(ac => `
       <div class="manage-row">
         <div class="info">
-          <div class="name">${ac.reg}</div>
+          <div class="name">${ac.reg}${ac.source ? ` <span style="font-size:10px;font-weight:normal;color:var(--muted);background:var(--panel-2);padding:1px 5px;border-radius:6px;margin-left:4px">${ac.source}</span>` : ''}</div>
           <div class="desc">${ac.type} · ${ac.units === 'metric' ? 'kg/mm' : 'lb/in'} · MTOW ${fmt(ac.mtow)} ${u(ac).w}</div>
         </div>
         <div class="actions">
@@ -2234,6 +2240,10 @@ const App = (function(){
         <div><label>Heading (°M)</label><input type="number" inputmode="decimal" id="rcfg-hdg" min="0" max="360" step="1" value="${rw.heading ?? ''}" placeholder="160"></div>
       </div>
       <div class="row">
+        <div><label>Source ${rw.source ? '<span style="font-size:10px;color:var(--muted);font-weight:normal">(synced)</span>' : ''}</label><input type="text" id="rcfg-source" value="${rw.source||''}" placeholder="e.g. Personal, Wellington Aero Club"></div>
+        <div></div>
+      </div>
+      <div class="row">
         <div><label>Elevation (ft)</label><input type="number" inputmode="decimal" id="rcfg-elev" min="-1000" max="14000" step="1" value="${rw.elev ?? ''}" placeholder="41"></div>
         <div><label>Slope (%)</label><input type="number" inputmode="decimal" id="rcfg-slope" min="-15" max="15" step="0.1" value="${rw.slope ?? ''}" placeholder="-0.7"></div>
       </div>
@@ -2290,6 +2300,7 @@ const App = (function(){
       lda: parseFloat(document.getElementById('rcfg-lda').value) || 0,
       surface: document.getElementById('rcfg-surface').value,
       group: grpV === '' ? null : parseInt(grpV, 10),
+      source: (document.getElementById('rcfg-source') ? document.getElementById('rcfg-source').value.trim() : '') || null,
     };
   }
   function _applyRunwayToSide(side, rw){
@@ -2415,7 +2426,7 @@ const App = (function(){
     host.innerHTML = runways.map(rw => `
       <div style="display:flex;align-items:center;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
         <div style="flex:1">
-          <div style="font-weight:600">${rw.ident || '(no ident)'}</div>
+          <div style="font-weight:600">${rw.ident || '(no ident)'}${rw.source ? ` <span style="font-size:10px;font-weight:normal;color:var(--muted);background:var(--panel-2);padding:1px 5px;border-radius:6px;margin-left:4px">${rw.source}</span>` : ''}</div>
           <div style="font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums">${rw.surface||'paved'} · hdg ${rw.heading||'?'}° · elev ${rw.elev||'?'}\u2032 · TORA ${rw.tora||'?'} · LDA ${rw.lda||'?'}${rw.group!=null?' · Gp '+rw.group:''}</div>
         </div>
         <button class="icon-btn" onclick="App.manageRunwaySelect('${rw.id}')" title="Select" aria-label="Select">✓</button>
@@ -2604,6 +2615,10 @@ const App = (function(){
       <div class="row">
         <div><label>Registration</label><input type="text" id="cfg-reg" value="${a.reg||''}" placeholder="G-XXXX"></div>
         <div><label>Type</label><input type="text" id="cfg-type" value="${a.type||''}" placeholder="C172N"></div>
+      </div>
+      <div class="row">
+        <div><label>Source ${a.source ? '<span style="font-size:10px;color:var(--muted);font-weight:normal">(synced)</span>' : ''}</label><input type="text" id="cfg-source" value="${a.source||''}" placeholder="e.g. Personal, Wellington Aero Club"></div>
+        <div></div>
       </div>
       <div class="row">
         <div><label>Units</label>
@@ -2909,6 +2924,7 @@ const App = (function(){
     const n = id => parseFloat(v(id));
     if (g('cfg-reg')) a.reg = v('cfg-reg') || a.reg;
     if (g('cfg-type')) a.type = v('cfg-type') || a.type;
+    if (g('cfg-source')) a.source = v('cfg-source').trim() || null;
     if (g('cfg-fdens')){
       const fd = n('cfg-fdens');
       if (!isNaN(fd)){
@@ -3075,6 +3091,175 @@ const App = (function(){
     if (cb) cb(chosen);
   }
 
+  // ============ Club data sync ============
+  // Each entry: { id, club_name, club_short_name, url, last_synced_at, last_counts }
+  let clubSyncs = [];
+  function loadClubSyncs(){
+    try { clubSyncs = JSON.parse(localStorage.getItem(CLUB_SYNCS_KEY) || '[]'); }
+    catch(e){ clubSyncs = []; }
+  }
+  function saveClubSyncs(){ localStorage.setItem(CLUB_SYNCS_KEY, JSON.stringify(clubSyncs)); }
+
+  function _fetchClubFile(url){
+    // Cache-bust so Drive/OneDrive return fresh content
+    const sep = url.includes('?') ? '&' : '?';
+    return fetch(url + sep + '_t=' + Date.now(), { cache: 'no-store' })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(j => {
+        if (!j || typeof j !== 'object') throw new Error('Not a valid JSON object');
+        if (!j.club_name) throw new Error('Missing club_name in file');
+        if (!Array.isArray(j.aircraft) && !Array.isArray(j.runways)) throw new Error('No aircraft or runways arrays in file');
+        return j;
+      });
+  }
+
+  function addClubSyncUrl(){
+    const url = prompt('Paste the club data URL\n\n(OneDrive or Google Drive direct-download link to the club JSON file):');
+    if (!url) return;
+    _fetchClubFile(url.trim())
+      .then(j => {
+        const id = 'sync-' + Math.random().toString(36).slice(2, 9);
+        clubSyncs.push({ id, club_name: j.club_name, club_short_name: j.club_short_name || j.club_name, url: url.trim(), last_synced_at: null, last_counts: null });
+        saveClubSyncs();
+        renderClubSyncList();
+        alert(`Added club "${j.club_name}". Click Sync to import its data.`);
+      })
+      .catch(err => alert('Could not load club file:\n' + err.message + '\n\nCheck the URL is a direct-download link with public read access.'));
+  }
+
+  function removeClubSync(id){
+    const s = clubSyncs.find(x => x.id === id); if (!s) return;
+    if (!confirm(`Remove the sync URL for "${s.club_name}"?\n\nAircraft and runways already imported from this source will remain in your local data unless you also choose to remove them.`)) return;
+    clubSyncs = clubSyncs.filter(x => x.id !== id);
+    saveClubSyncs();
+    renderClubSyncList();
+  }
+
+  function removeAllFromSource(source){
+    const counts = {
+      aircraft: fleet.filter(a => a.source === source).length,
+      runways: runways.filter(r => r.source === source).length,
+    };
+    if (!counts.aircraft && !counts.runways){ alert(`No aircraft or runways with source "${source}".`); return; }
+    if (!confirm(`Remove all data from source "${source}"?\n\n  • ${counts.aircraft} aircraft\n  • ${counts.runways} runways\n\nThis cannot be undone.`)) return;
+    fleet = fleet.filter(a => a.source !== source);
+    runways = runways.filter(r => r.source !== source);
+    if (!fleet.find(a => a.id === selectedId)) selectedId = fleet[0] && fleet[0].id || null;
+    save(); saveSelected(); saveRunways();
+    renderClubSyncList(); renderAll();
+    alert(`Removed ${counts.aircraft} aircraft and ${counts.runways} runways from "${source}".`);
+  }
+
+  function syncFromClub(id){
+    const s = clubSyncs.find(x => x.id === id); if (!s) return;
+    const proceed = () => {
+      _fetchClubFile(s.url)
+        .then(j => _applyClubSync(s, j))
+        .catch(err => alert('Sync failed:\n' + err.message));
+    };
+    // Show disclaimer the first time and on each sync (one-time ack stores the date for info only)
+    openClubDisclaimer(s.club_name, proceed);
+  }
+
+  function _applyClubSync(sync, file){
+    const source = file.club_name;
+    let acAdded = 0, acReplaced = 0, acSkipped = 0;
+    let rwAdded = 0, rwReplaced = 0, rwSkipped = 0;
+
+    // Aircraft: match on registration
+    if (Array.isArray(file.aircraft)){
+      const dupes = file.aircraft.filter(a => fleet.some(x => x.reg && x.reg === a.reg));
+      let action = 'add';
+      if (dupes.length){
+        const msg = `${dupes.length} of ${file.aircraft.length} aircraft match existing registrations in your fleet:\n\n${dupes.slice(0,8).map(a => '  \u2022 ' + (a.reg||'?')).join('\n')}${dupes.length > 8 ? '\n  \u2026' : ''}\n\nOK = overwrite with club data\nCancel = skip duplicates (keep your existing)`;
+        action = confirm(msg) ? 'overwrite' : 'skip';
+      }
+      file.aircraft.forEach(incoming => {
+        const idx = fleet.findIndex(x => x.reg && x.reg === incoming.reg);
+        const tagged = { ...incoming, source };
+        if (idx >= 0){
+          if (action === 'overwrite'){
+            fleet[idx] = migrate({ ...tagged, id: fleet[idx].id });
+            acReplaced++;
+          } else { acSkipped++; }
+        } else {
+          fleet.push(migrate({ ...tagged, id: 'ac-' + Math.random().toString(36).slice(2, 9) }));
+          acAdded++;
+        }
+      });
+    }
+
+    // Runways: match on ident + heading + surface
+    if (Array.isArray(file.runways)){
+      const sig = r => `${(r.ident||'').trim().toLowerCase()}|${r.heading}|${r.surface||'paved'}`;
+      const dupes = file.runways.filter(rw => runways.some(existing => sig(existing) === sig(rw)));
+      let action = 'add';
+      if (dupes.length){
+        const msg = `${dupes.length} of ${file.runways.length} runways match existing runways in your list:\n\n${dupes.slice(0,8).map(rw => '  \u2022 ' + (rw.ident||'?') + ' (' + (rw.surface||'paved') + ')').join('\n')}${dupes.length > 8 ? '\n  \u2026' : ''}\n\nOK = overwrite with club data\nCancel = skip duplicates`;
+        action = confirm(msg) ? 'overwrite' : 'skip';
+      }
+      file.runways.forEach(rw => {
+        const dupIdx = runways.findIndex(existing => sig(existing) === sig(rw));
+        const tagged = { ...rw, source };
+        if (dupIdx >= 0){
+          if (action === 'overwrite'){
+            runways[dupIdx] = migrateRunway({ ...tagged, id: runways[dupIdx].id });
+            rwReplaced++;
+          } else { rwSkipped++; }
+        } else {
+          runways.push(migrateRunway({ ...tagged, id: 'rwy-' + Math.random().toString(36).slice(2, 9) }));
+          rwAdded++;
+        }
+      });
+    }
+
+    sync.last_synced_at = new Date().toISOString();
+    sync.last_counts = { acAdded, acReplaced, acSkipped, rwAdded, rwReplaced, rwSkipped };
+    saveClubSyncs();
+    if (!fleet.find(a => a.id === selectedId)) selectedId = fleet[0] && fleet[0].id || null;
+    save(); saveSelected(); saveRunways();
+    renderClubSyncList();
+    renderSavedRunwaysPicker('to');
+    renderSavedRunwaysPicker('ld');
+    renderAll();
+    alert(`Sync from "${source}" complete:\n\n  Aircraft: ${acAdded} added, ${acReplaced} updated, ${acSkipped} skipped\n  Runways:  ${rwAdded} added, ${rwReplaced} updated, ${rwSkipped} skipped`);
+  }
+
+  function openClubDisclaimer(clubName, onAccept){
+    const m = document.getElementById('club-disclaimer-modal');
+    document.getElementById('club-disclaimer-club').textContent = clubName;
+    document.getElementById('club-disclaimer-ack').onclick = () => {
+      m.classList.add('hidden');
+      localStorage.setItem(CLUB_DISCLAIMER_ACK_KEY, new Date().toISOString());
+      onAccept();
+    };
+    document.getElementById('club-disclaimer-cancel').onclick = () => { m.classList.add('hidden'); };
+    m.classList.remove('hidden');
+  }
+
+  function renderClubSyncList(){
+    const host = document.getElementById('club-sync-list');
+    if (!host) return;
+    if (!clubSyncs.length){
+      host.innerHTML = '<p style="font-size:12px;color:var(--muted);margin:6px 0">No club data sources configured yet.</p>';
+      return;
+    }
+    host.innerHTML = clubSyncs.map(s => {
+      const last = s.last_synced_at ? new Date(s.last_synced_at).toLocaleDateString() : 'never';
+      const counts = s.last_counts;
+      const lastTxt = counts ? `Last sync: ${last} (${counts.acAdded + counts.acReplaced} aircraft, ${counts.rwAdded + counts.rwReplaced} runways)` : `Last sync: ${last}`;
+      return `<div style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px">
+        <div style="font-weight:600">${s.club_name}</div>
+        <div style="font-size:11px;color:var(--muted);margin:2px 0 6px">${lastTxt}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn secondary" style="flex:1;min-width:80px;font-size:12px;padding:5px" onclick="App.syncFromClub('${s.id}')">Sync now</button>
+          <button class="btn secondary" style="font-size:12px;padding:5px" onclick="App.removeAllFromSource(${JSON.stringify(s.club_name).replace(/"/g,'&quot;')})">Remove imported</button>
+          <button class="btn secondary danger" style="font-size:12px;padding:5px" onclick="App.removeClubSync('${s.id}')">×</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   function exportData(){
     if (fleet.length === 0){ alert('No aircraft to export.'); return; }
     openPicker({
@@ -3174,7 +3359,7 @@ const App = (function(){
     alert('All aircraft cleared.');
   }
 
-  function openMenu(){ document.getElementById('menu-modal').classList.remove('hidden'); }
+  function openMenu(){ renderClubSyncList(); document.getElementById('menu-modal').classList.remove('hidden'); }
   function closeMenu(){ document.getElementById('menu-modal').classList.add('hidden'); }
 
   // ---- main render ----
@@ -3214,6 +3399,7 @@ const App = (function(){
 
   function init(){
     load();
+    loadClubSyncs();
     document.getElementById('btn-menu').onclick = openMenu;
     const vEl = document.getElementById('version-label');
     if (vEl) vEl.textContent = APP_VERSION;
@@ -3240,6 +3426,7 @@ const App = (function(){
     openManageRunways, closeManageRunways, manageRunwaySelect, manageRunwayEdit, manageRunwayDuplicate, manageRunwayDelete,
     exportRunways, importRunways, importRunwaysFile, restoreDefaultRunways,
     pickerSelectAll, cancelPicker, confirmPicker,
+    addClubSyncUrl, syncFromClub, removeClubSync, removeAllFromSource,
   };
 })();
 

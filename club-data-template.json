@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "club_name": "Wellington Aero Club",
+  "club_short_name": "WAC",
+  "last_updated": "2026-05-26",
+  "maintainer": "D. Donald",
+  "notes": "Aircraft and runway configurations for Wellington Aero Club fleet. Refer to the AIP and aircraft Flight Manual for authoritative current data. PIC remains responsible for all verifications.",
+  "aircraft": [
+    {
+      "reg": "ZK-EKE",
+      "type": "C172N",
+      "units": "metric",
+      "empty_weight": 720,
+      "empty_arm": 1090,
+      "mtow": 1043,
+      "max_takeoff_weight": 1043,
+      "max_landing_weight": 1043,
+      "fuel_kg_per_litre": 0.72,
+      "fuel_lb_per_gal": 6.01,
+      "usable_fuel": 144,
+      "fuel_total": 159,
+      "fuel_unusable": 15,
+      "fuel_arm": 1219,
+      "fuel_rate_lph": 32,
+      "stations": [
+        { "name": "Front seats", "arm": 940, "max_weight": 200 },
+        { "name": "Rear seats", "arm": 1830, "max_weight": 270 },
+        { "name": "Baggage A", "arm": 2410, "max_weight": 54 },
+        { "name": "Baggage B", "arm": 3100, "max_weight": 23 }
+      ],
+      "envelope": [
+        { "weight": 770, "arm": 890 },
+        { "weight": 770, "arm": 1300 },
+        { "weight": 1043, "arm": 1041 },
+        { "weight": 1043, "arm": 1212 }
+      ],
+      "pchart_id": "C172N",
+      "afm_id": "C172N",
+      "crosswind_demonstrated_kt": 15,
+      "crosswind_club_kt": 12
+    }
+  ],
+  "runways": [
+    {
+      "ident": "NZWN 16",
+      "heading": 160,
+      "elev": 41,
+      "slope": -0.7,
+      "tora": 1936,
+      "lda": 1719,
+      "surface": "paved",
+      "group": null
+    },
+    {
+      "ident": "NZWN 34",
+      "heading": 340,
+      "elev": 41,
+      "slope": 0.7,
+      "tora": 1936,
+      "lda": 1719,
+      "surface": "paved",
+      "group": null
+    }
+  ]
+}

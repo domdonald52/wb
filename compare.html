@@ -46,7 +46,7 @@ canvas{max-width:100%}
 <div class="grid">
   <div class="card">
     <h2>1. PA × OAT heatmap</h2>
-    <div class="sub">Baseline: MTOW, PPD (private paved day), 0 wind, 0 slope, dry. Colour = discrepancy %.</div>
+    <div class="sub">Baseline: MTOW, PPD, 0 wind, 0 slope, dry. Cells show <strong>%diff</strong> over <strong>P-chart / FM</strong> distances (m).</div>
     <div id="heat-host"></div>
     <div class="legend">
       <span><span class="sw" style="background:#1e3a8a"></span> &lt; −10% (P-chart higher)</span>
@@ -137,7 +137,7 @@ function renderHeat(acKey, phase){
       }
       const pct = pVal > 0 ? (aVal - pVal) / pVal * 100 : 0;
       const sign = pct >= 0 ? '+' : '';
-      tbl.innerHTML += `<div class="cell" style="background:${colorFor(pct)};color:#fff;font-weight:600" title="P-chart ${pVal.toFixed(0)} m, FM+AC91-3 ${aVal.toFixed(0)} m">${sign}${pct.toFixed(0)}%</div>`;
+      tbl.innerHTML += `<div class="cell" style="background:${colorFor(pct)};color:#fff;font-weight:600;font-size:10px;line-height:1.3" title="P-chart ${pVal.toFixed(0)} m, FM+AC91-3 ${aVal.toFixed(0)} m"><div style="font-size:12px">${sign}${pct.toFixed(0)}%</div><div style="opacity:0.85">${pVal.toFixed(0)} / ${aVal.toFixed(0)}</div></div>`;
     });
   });
   host.appendChild(tbl);
@@ -161,6 +161,7 @@ function renderOps(acKey, phase){
   const aVals = ops.map(o => phase==='takeoff'
     ? afmTakeoffDist(a, 0, 15, o.surface, 0, 0, false)
     : afmLandingDist(a, 0, 15, o.surface, 0, 0, false));
+  const diffs = ops.map((o,i) => pVals[i] > 0 ? ((aVals[i] - pVals[i])/pVals[i]*100).toFixed(0) : '');
   if (opsChart) opsChart.destroy();
   opsChart = new Chart(document.getElementById('ops-chart'), {
     type: 'bar',
@@ -173,12 +174,28 @@ function renderOps(acKey, phase){
     },
     options: {
       responsive: true,
-      plugins: { legend: { labels: { color: '#e6e8eb' } } },
+      plugins: { legend: { labels: { color: '#e6e8eb' } }, tooltip: { callbacks: { afterBody: (items) => { const i = items[0].dataIndex; return 'Diff: ' + (diffs[i]>=0?'+':'') + diffs[i] + '%'; } } } },
       scales: {
         x: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' } },
         y: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Distance (m)', color: '#9aa5b1' } },
       },
     },
+    plugins: [{
+      id: 'diffLabels',
+      afterDatasetsDraw(chart){
+        const {ctx, data, scales: {x, y}} = chart;
+        ctx.save(); ctx.fillStyle = '#e6e8eb'; ctx.font = 'bold 11px system-ui,sans-serif'; ctx.textAlign = 'center';
+        const meta = chart.getDatasetMeta(1); // FM bars
+        meta.data.forEach((bar, i) => {
+          const d = diffs[i];
+          const sign = d >= 0 ? '+' : '';
+          const color = Math.abs(d) < 3 ? '#16a34a' : Math.abs(d) < 10 ? '#d97706' : '#dc2626';
+          ctx.fillStyle = color;
+          ctx.fillText(sign + d + '%', bar.x, bar.y - 6);
+        });
+        ctx.restore();
+      },
+    }],
   });
 }
 
@@ -194,6 +211,7 @@ function renderWind(acKey, phase){
   const aVals = winds.map(k => phase==='takeoff'
     ? afmTakeoffDist(a, 0, 15, 'paved', 0, k, false)
     : afmLandingDist(a, 0, 15, 'paved', 0, k, false));
+  const labelPts = [-5, 0, 10, 20];
   if (windChart) windChart.destroy();
   windChart = new Chart(document.getElementById('wind-chart'), {
     type: 'line',
@@ -206,12 +224,29 @@ function renderWind(acKey, phase){
     },
     options: {
       responsive: true,
-      plugins: { legend: { labels: { color: '#e6e8eb' } } },
+      plugins: { legend: { labels: { color: '#e6e8eb' } }, tooltip: { callbacks: { afterBody: (items) => { const i = items[0].dataIndex; const d = ((aVals[i]-pVals[i])/pVals[i]*100); return 'Diff: ' + (d>=0?'+':'') + d.toFixed(0) + '%'; } } } },
       scales: {
         x: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Wind component (kt; − = tailwind)', color: '#9aa5b1' } },
         y: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Distance (m)', color: '#9aa5b1' } },
       },
     },
+    plugins: [{
+      id: 'diffLabelsWind',
+      afterDatasetsDraw(chart){
+        const {ctx} = chart;
+        const meta = chart.getDatasetMeta(1);
+        ctx.save(); ctx.font = 'bold 10px system-ui,sans-serif'; ctx.textAlign = 'center';
+        labelPts.forEach(kt => {
+          const i = winds.indexOf(kt); if (i < 0) return;
+          const pt = meta.data[i]; if (!pt) return;
+          const d = ((aVals[i]-pVals[i])/pVals[i]*100);
+          const sign = d >= 0 ? '+' : '';
+          ctx.fillStyle = Math.abs(d) < 3 ? '#16a34a' : Math.abs(d) < 10 ? '#d97706' : '#dc2626';
+          ctx.fillText(sign + d.toFixed(0) + '%', pt.x, pt.y - 8);
+        });
+        ctx.restore();
+      },
+    }],
   });
 }
 
@@ -249,12 +284,28 @@ function renderWeight(acKey, phase){
     },
     options: {
       responsive: true,
-      plugins: { legend: { labels: { color: '#e6e8eb' } } },
+      plugins: { legend: { labels: { color: '#e6e8eb' } }, tooltip: { callbacks: { afterBody: (items) => { const i = items[0].dataIndex; const d = ((aVals[i]-pVals[i])/pVals[i]*100); return 'Diff: ' + (d>=0?'+':'') + d.toFixed(0) + '%'; } } } },
       scales: {
         x: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Weight (kg)', color: '#9aa5b1' } },
         y: { ticks: { color: '#9aa5b1' }, grid: { color: '#2c3a5e' }, title: { display: true, text: 'Distance (m)', color: '#9aa5b1' } },
       },
     },
+    plugins: [{
+      id: 'diffLabelsWt',
+      afterDatasetsDraw(chart){
+        const {ctx} = chart;
+        const meta = chart.getDatasetMeta(1);
+        ctx.save(); ctx.font = 'bold 10px system-ui,sans-serif'; ctx.textAlign = 'center';
+        [0, weights.length-1, Math.floor(weights.length/2)].forEach(i => {
+          const pt = meta.data[i]; if (!pt) return;
+          const d = ((aVals[i]-pVals[i])/pVals[i]*100);
+          const sign = d >= 0 ? '+' : '';
+          ctx.fillStyle = Math.abs(d) < 3 ? '#16a34a' : Math.abs(d) < 10 ? '#d97706' : '#dc2626';
+          ctx.fillText(sign + d.toFixed(0) + '%', pt.x, pt.y - 8);
+        });
+        ctx.restore();
+      },
+    }],
   });
 }
 

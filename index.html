@@ -387,6 +387,26 @@
     </div>
   </div>
 </div>
+
+<div class="modal-bg hidden" id="club-disclaimer-modal">
+  <div class="modal" style="max-width:480px">
+    <h3 style="margin:0 0 10px;color:var(--warn)">⚠ Importing club data</h3>
+    <p style="font-size:13px;line-height:1.5;color:var(--text)">You are about to import aircraft and runway data from <strong id="club-disclaimer-club">a club source</strong>.</p>
+    <p style="font-size:13px;line-height:1.5;color:var(--text)">This data is provided <strong>without warranty</strong>. The accuracy and currency of values is not guaranteed by the club, the maintainer, or this app.</p>
+    <p style="font-size:13px;line-height:1.5;color:var(--text)">As Pilot-in-Command you remain solely responsible for:</p>
+    <ul style="font-size:13px;line-height:1.4;color:var(--text);padding-left:18px;margin:0 0 10px">
+      <li>verifying aircraft weight, balance and performance data against the current Flight Manual / POH</li>
+      <li>verifying runway data against the current AIP</li>
+      <li>cross-checking all calculations before flight</li>
+    </ul>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 14px">Data will be tagged with the club name so you can see where each entry came from.</p>
+    <div style="display:flex;gap:8px">
+      <button class="btn secondary" id="club-disclaimer-cancel" style="flex:1">Cancel</button>
+      <button class="btn" id="club-disclaimer-ack" style="flex:1">I understand — continue</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg hidden" id="manage-runways-modal">
   <div class="modal">
     <div style="display:flex;align-items:center;margin-bottom:10px">
@@ -466,6 +486,11 @@
     </div>
     <button class="btn secondary" onclick="App.restoreDefaultRunways()" style="margin-bottom:6px;width:100%">Clear all runways</button>
     <input type="file" id="import-runways-file" accept="application/json" style="display:none" onchange="App.importRunwaysFile(event)">
+
+    <h4 style="font-size:13px;margin:14px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Club data sync</h4>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 6px">Pull aircraft &amp; runway data from a shared club file (OneDrive or Google Drive). You can add multiple clubs. Pilot remains responsible for verifying all data.</p>
+    <div id="club-sync-list"></div>
+    <button class="btn secondary" onclick="App.addClubSyncUrl()" style="margin-top:4px;width:100%">+ Add club URL</button>
 
     <hr>
     <p style="font-size:12px;color:var(--muted);margin:0">
