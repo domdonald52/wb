@@ -288,13 +288,15 @@ function blankAircraft(){
   return {
     reg: '', type: '', units: 'metric',
     empty_weight: 0, empty_arm: 0,
-    mtow: 0, max_takeoff_weight: 0, max_landing_weight: 0,
+    mtow: 0, mlw: 0, mzfw: null,
     fuel_kg_per_litre: 0.72, fuel_lb_per_gal: 6.01,
-    usable_fuel: 0, fuel_total: 0, fuel_unusable: 0, fuel_arm: 0, fuel_rate_lph: 0,
+    usable_fuel: 0, fuel_total: 0, fuel_unusable: 0, fuel_arm: 0,
+    burn_rate: 0, reserve_minutes: 30,
     stations: [],
     envelope: [],
     pchart_id: null, afm_id: null,
     crosswind_demonstrated_kt: null, crosswind_club_kt: null,
+    group: null,
   };
 }
 
@@ -353,24 +355,25 @@ function renderAcForm(a){
     </div>
     <div class="row">
       <div><label>MTOW (${wU})</label><input type="number" step="0.1" id="f-mtow" value="${a.mtow||0}"></div>
-      <div><label>Max T/O weight (${wU})</label><input type="number" step="0.1" id="f-mtow2" value="${a.max_takeoff_weight||a.mtow||0}"></div>
-      <div><label>Max landing weight (${wU})</label><input type="number" step="0.1" id="f-mlw" value="${a.max_landing_weight||a.mtow||0}"></div>
+      <div><label>MLW (${wU})</label><input type="number" step="0.1" id="f-mlw" value="${a.mlw||a.mtow||0}"></div>
+      <div><label>MZFW (${wU}, optional)</label><input type="number" step="0.1" id="f-mzfw" value="${a.mzfw ?? ''}" placeholder="leave blank if N/A"></div>
     </div>
     <hr>
     <h4>Fuel</h4>
     <div class="row">
       <div><label>Usable (${isMetric?'L':'gal'})</label><input type="number" step="0.1" id="f-fu" value="${a.usable_fuel||0}"></div>
-      <div><label>Total (${isMetric?'L':'gal'})</label><input type="number" step="0.1" id="f-ft" value="${a.fuel_total||a.usable_fuel||0}"></div>
-      <div><label>Unusable (${isMetric?'L':'gal'})</label><input type="number" step="0.1" id="f-fun" value="${a.fuel_unusable||0}"></div>
+      <div><label>Total (${isMetric?'L':'gal'}, optional)</label><input type="number" step="0.1" id="f-ft" value="${a.fuel_total||a.usable_fuel||0}"></div>
+      <div><label>Unusable (${isMetric?'L':'gal'}, optional)</label><input type="number" step="0.1" id="f-fun" value="${a.fuel_unusable||0}"></div>
     </div>
     <div class="row">
       <div><label>Fuel arm (${aU})</label><input type="number" step="0.1" id="f-farm" value="${a.fuel_arm||0}"></div>
-      <div><label>Burn rate (${isMetric?'L/hr':'gal/hr'})</label><input type="number" step="0.1" id="f-fr" value="${a.fuel_rate_lph||0}"></div>
+      <div><label>Burn rate (${isMetric?'L/hr':'gal/hr'})</label><input type="number" step="0.1" id="f-fr" value="${a.burn_rate||0}"></div>
+      <div><label>Reserve minutes</label><input type="number" step="1" id="f-res" value="${a.reserve_minutes||30}"></div>
     </div>
     <hr>
     <h4>Stations <button onclick="addStation()" style="font-size:11px;padding:2px 7px;margin-left:6px">+ Add</button></h4>
     <table class="stations-table" id="f-stations-tbl">
-      <thead><tr><th>Name</th><th>Arm (${aU})</th><th>Max wt (${wU})</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Arm (${aU})</th><th>Min (${wU})</th><th>Max (${wU})</th><th>Default (${wU})</th><th></th></tr></thead>
       <tbody id="f-stations-body"></tbody>
     </table>
     <hr>
@@ -389,6 +392,12 @@ function renderAcForm(a){
     <div class="row">
       <div><label>Crosswind: demonstrated (kt)</label><input type="number" step="1" id="f-xwd" value="${a.crosswind_demonstrated_kt ?? ''}" placeholder="optional"></div>
       <div><label>Crosswind: club limit (kt)</label><input type="number" step="1" id="f-xwc" value="${a.crosswind_club_kt ?? ''}" placeholder="optional"></div>
+      <div><label>Aircraft group</label>
+        <select id="f-group">
+          <option value="" ${a.group==null?'selected':''}>— not set —</option>
+          ${[1,2,3,4,5,6,7,8].map(g => `<option value="${g}" ${a.group===g?'selected':''}>${g}</option>`).join('')}
+        </select>
+      </div>
     </div>
   `;
   // Stations
@@ -400,9 +409,11 @@ function renderStationsBody(stations){
   const body = document.getElementById('f-stations-body');
   body.innerHTML = stations.map((s, i) => `
     <tr>
-      <td><input type="text" data-station-field="name" data-i="${i}" value="${escape(s.name||'')}"></td>
-      <td><input type="number" step="0.1" data-station-field="arm" data-i="${i}" value="${s.arm||0}"></td>
-      <td><input type="number" step="0.1" data-station-field="max_weight" data-i="${i}" value="${s.max_weight||0}"></td>
+      <td><input type="text" value="${escape(s.name||'')}"></td>
+      <td><input type="number" step="0.1" value="${s.arm||0}"></td>
+      <td><input type="number" step="0.1" value="${s.min ?? 0}"></td>
+      <td><input type="number" step="0.1" value="${s.max ?? s.max_weight ?? 0}"></td>
+      <td><input type="number" step="0.1" value="${s.default ?? 0}"></td>
       <td><span class="del" onclick="removeStation(${i})">×</span></td>
     </tr>`).join('');
   body.dataset.count = stations.length;
@@ -417,7 +428,7 @@ function rerenderAcUnits(){
 
 function addStation(){
   const cur = readStations();
-  cur.push({ name: '', arm: 0, max_weight: 0 });
+  cur.push({ name: '', arm: 0, min: 0, max: 0, default: 0 });
   renderStationsBody(cur);
 }
 function removeStation(i){
@@ -435,7 +446,9 @@ function readStations(){
     out.push({
       name: inputs[0].value,
       arm: parseFloat(inputs[1].value) || 0,
-      max_weight: parseFloat(inputs[2].value) || 0,
+      min: parseFloat(inputs[2].value) || 0,
+      max: parseFloat(inputs[3].value) || 0,
+      default: parseFloat(inputs[4].value) || 0,
     });
   });
   return out;
@@ -481,24 +494,28 @@ function readAcForm(){
   const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
   const n = id => parseFloat(v(id)) || 0;
   const isMetric = v('f-units') === 'metric';
+  const mzfwRaw = v('f-mzfw');
   return {
     reg: v('f-reg').trim(),
     type: v('f-type').trim(),
     units: v('f-units'),
     empty_weight: n('f-ew'), empty_arm: n('f-ea'),
     mtow: n('f-mtow'),
-    max_takeoff_weight: n('f-mtow2') || n('f-mtow'),
-    max_landing_weight: n('f-mlw') || n('f-mtow'),
+    mlw: n('f-mlw') || n('f-mtow'),
+    mzfw: mzfwRaw === '' ? null : (parseFloat(mzfwRaw) || null),
     fuel_kg_per_litre: isMetric ? n('f-fdens') : 0.72,
     fuel_lb_per_gal:   isMetric ? 6.01 : n('f-fdens'),
     usable_fuel: n('f-fu'), fuel_total: n('f-ft') || n('f-fu'), fuel_unusable: n('f-fun'),
-    fuel_arm: n('f-farm'), fuel_rate_lph: n('f-fr'),
+    fuel_arm: n('f-farm'),
+    burn_rate: n('f-fr'),
+    reserve_minutes: n('f-res') || 30,
     stations: readStations(),
     envelope: readEnv(),
     pchart_id: v('f-pchart').trim() || null,
     afm_id: v('f-afm').trim() || null,
     crosswind_demonstrated_kt: v('f-xwd') === '' ? null : (parseFloat(v('f-xwd'))||null),
     crosswind_club_kt:         v('f-xwc') === '' ? null : (parseFloat(v('f-xwc'))||null),
+    group:                     v('f-group') === '' ? null : (parseInt(v('f-group'),10)||null),
   };
 }
 

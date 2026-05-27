@@ -13,20 +13,21 @@
       "empty_weight": 720,
       "empty_arm": 1090,
       "mtow": 1043,
-      "max_takeoff_weight": 1043,
-      "max_landing_weight": 1043,
+      "mlw": 1043,
+      "mzfw": null,
       "fuel_kg_per_litre": 0.72,
       "fuel_lb_per_gal": 6.01,
       "usable_fuel": 144,
       "fuel_total": 159,
       "fuel_unusable": 15,
       "fuel_arm": 1219,
-      "fuel_rate_lph": 32,
+      "burn_rate": 32,
+      "reserve_minutes": 30,
       "stations": [
-        { "name": "Front seats", "arm": 940, "max_weight": 200 },
-        { "name": "Rear seats", "arm": 1830, "max_weight": 270 },
-        { "name": "Baggage A", "arm": 2410, "max_weight": 54 },
-        { "name": "Baggage B", "arm": 3100, "max_weight": 23 }
+        { "name": "Front seats", "arm": 940,  "min": 0, "max": 200, "default": 154 },
+        { "name": "Rear seats",  "arm": 1830, "min": 0, "max": 270, "default": 0 },
+        { "name": "Baggage A",   "arm": 2410, "min": 0, "max": 54,  "default": 0 },
+        { "name": "Baggage B",   "arm": 3100, "min": 0, "max": 23,  "default": 0 }
       ],
       "envelope": [
         { "w": 770,  "fwd": 890,  "aft": 1300 },
