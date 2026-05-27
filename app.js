@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v80';
+  const APP_VERSION = 'wb-v81';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -659,7 +659,7 @@ const App = (function(){
         const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
         const endurance = f / ac.burn_rate;
         const usableEnd = Math.max(0, (f - reserveFuel) / ac.burn_rate);
-        const msg = `Endurance: ${fmt(endurance,2)} h to dry · ${fmt(usableEnd,2)} h after ${ac.reserve_minutes}-min reserve`;
+        const msg = `Endurance: ${fmt(endurance,2)} h to dry \u00b7 ${fmt(usableEnd,2)} h plus ${ac.reserve_minutes}-min reserve`;
         if (d > usableEnd && d > 0){
           el.innerHTML = `<div class="banner bad" style="margin:0;font-size:11px">⚠ Planned duration ${fmt(d,2)} h exceeds endurance after reserve (${fmt(usableEnd,2)} h). ${msg}</div>`;
         } else if (d > 0){
@@ -1179,9 +1179,9 @@ const App = (function(){
     if (to_d != null && rTo.tora > 0 && to_d > rTo.tora) violations.push(`T/O ${to_d.toFixed(0)} m exceeds TORA ${rTo.tora} m`);
     if (ld_d != null && rLd.lda > 0 && ld_d > rLd.lda) violations.push(`Landing ${ld_d.toFixed(0)} m exceeds LDA ${rLd.lda} m`);
     if (xwLimit && Math.abs(toW.crosswind) > xwLimit) violations.push(`T/O crosswind ${Math.abs(toW.crosswind).toFixed(1)} kt exceeds limit ${xwLimit} kt`);
-    if (xwLimit && Math.abs(ldW.crosswind) > xwLimit) violations.push(`Landing crosswind ${Math.abs(ldW.crosswind).toFixed(1)} kt exceeds limit ${xwLimit} kt`);
+    if (xwLimit && Math.abs(ldW.crosswind) > xwLimit) violations.push(`LDG crosswind ${Math.abs(ldW.crosswind).toFixed(1)} kt exceeds limit ${xwLimit} kt`);
     if (toW.headwind < 0) violations.push(`T/O tailwind ${(-toW.headwind).toFixed(1)} kt`);
-    if (ldW.headwind < 0) violations.push(`Landing tailwind ${(-ldW.headwind).toFixed(1)} kt`);
+    if (ldW.headwind < 0) violations.push(`LDG tailwind ${(-ldW.headwind).toFixed(1)} kt`);
     if (ac.group != null && rTo.group != null && ac.group > rTo.group) violations.push(`T/O: Aircraft Group ${ac.group} exceeds runway Group ${rTo.group}`);
     if (ac.group != null && rLd.group != null && ac.group > rLd.group) violations.push(`Landing: Aircraft Group ${ac.group} exceeds runway Group ${rLd.group}`);
 
@@ -1237,7 +1237,7 @@ const App = (function(){
       </div>
       <div style="border:1px solid #999;padding:8px;border-radius:4px;margin-bottom:8px;font-size:9pt">
         <strong>Method:</strong> ${methodLabel || 'none'}${activeMethod === 'pchart' ? ' \u2014 CASO 4 baked into chart' : (activeMethod === 'afm' ? ' \u2014 AC91-3 factors applied' : '')}
-        ${activeMethod === 'pchart' ? '<br><strong>T/O chart line:</strong> ' + lineLabels[opKeyTo] + '<br><strong>Landing chart line:</strong> ' + lineLabels[opKeyLd] : ''}
+        ${activeMethod === 'pchart' ? '<br><strong>T/O chart line:</strong> ' + lineLabels[opKeyTo] + '<br><strong>LDG chart line:</strong> ' + lineLabels[opKeyLd] : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;font-size:9pt">
         <div style="border:1px solid #999;padding:6px 8px;border-radius:4px">
@@ -1700,7 +1700,7 @@ const App = (function(){
     host.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
         <div><label>Wind dir (°M)</label><input type="number" inputmode="decimal" id="${side}-wind-dir" min="0" max="360" step="10" value="${w.dir || ''}"></div>
-        <div><label>Wind kt</label><input type="number" inputmode="decimal" id="${side}-wind-spd" min="0" step="1" value="${w.speed || ''}"></div>
+        <div><label>Wind (kt)</label><input type="number" inputmode="decimal" id="${side}-wind-spd" min="0" step="1" value="${w.speed || ''}"></div>
         <div><label>OAT (°C)</label><input type="number" inputmode="decimal" id="${side}-oat" step="1" value="${oat}"></div>
         <div><label>QNH (hPa)</label><input type="number" inputmode="decimal" id="${side}-qnh" step="1" value="${qnh}"></div>
       </div>
@@ -1830,7 +1830,7 @@ const App = (function(){
     }
     const padaLd = document.getElementById('ld-pada');
     if (padaLd){
-      padaLd.innerHTML = `<strong>Pressure Alt: ${paLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Landing weight: ${ldwKg.toFixed(0)} kg</strong> ${wbSource}`;
+      padaLd.innerHTML = `<strong>Pressure Alt: ${paLd.toFixed(0)}\u2032</strong> \u00b7 <strong>Density Alt: ${daLd.toFixed(0)}\u2032</strong> \u00b7 <strong>LDG weight: ${ldwKg.toFixed(0)} kg</strong> ${wbSource}`;
     }
 
     const toWet = (perfInput.to_condition === 'wet');
@@ -1890,7 +1890,7 @@ const App = (function(){
     if (opDerived){
       const noteFor = (surface) => (activeMethod === 'pchart' && surface !== 'paved' && surface !== 'grass')
         ? ` <span style="color:var(--warn)">(chart treats "${surface.replace('_',' ')}" as Grass)</span>` : '';
-      opDerived.innerHTML = `T/O line: <strong>${opLabelMap[opKeyTo]}</strong>${noteFor(rTo.surface)}<br>Landing line: <strong>${opLabelMap[opKeyLd]}</strong>${noteFor(rLd.surface)}`;
+      opDerived.innerHTML = `T/O line: <strong>${opLabelMap[opKeyTo]}</strong>${noteFor(rTo.surface)}<br>LDG line: <strong>${opLabelMap[opKeyLd]}</strong>${noteFor(rLd.surface)}`;
     }
 
     const opWarn = document.getElementById('perf-op-warning');
@@ -1960,7 +1960,9 @@ const App = (function(){
         if (!oor && altDistance != null){
           const which = activeMethod === 'pchart' ? 'FM+AC91-3' : 'P-chart';
           const useTheBigger = Math.max(distance, altDistance);
-          altRow = `<div style="font-size:11px;color:var(--muted);margin-top:2px">${which}: ${altDistance.toFixed(0)} m \u2014 plan for the larger: <strong>${useTheBigger.toFixed(0)} m</strong></div>`;
+          // Show the other method's value and which to plan with — the larger is always the conservative choice
+          const planWith = useTheBigger.toFixed(0);
+          altRow = `<div style="font-size:11px;color:var(--muted);margin-top:2px">${which}: ${altDistance.toFixed(0)} m \u2192 plan with <strong>${planWith} m</strong></div>`;
         }
         return `
           <div class="stat ${cls}" style="margin-bottom:8px">
@@ -1983,7 +1985,7 @@ const App = (function(){
       const toEnvIssuesEarly = P.envelopeStatus(env, paTo, oatTo, null);
       const ldEnvIssuesEarly = P.envelopeStatus(env, paLd, oatLd, rLd.elev);
       if (toEnvIssuesEarly.length){ to_result.wind_out_of_range = true; to_result.wind_oor_reason = `T/O outside chart range: ${toEnvIssuesEarly.join('; ')}`; }
-      if (ldEnvIssuesEarly.length){ ld_result.wind_out_of_range = true; ld_result.wind_oor_reason = `Landing outside chart range: ${ldEnvIssuesEarly.join('; ')}`; }
+      if (ldEnvIssuesEarly.length){ ld_result.wind_out_of_range = true; ld_result.wind_oor_reason = `LDG outside chart range: ${ldEnvIssuesEarly.join('; ')}`; }
       const toOK = rTo.tora > 0 && to_result.distance <= rTo.tora && !to_result.wind_out_of_range;
       const ldOK = rLd.lda > 0 && ld_result.distance <= rLd.lda && !ld_result.wind_out_of_range;
 
@@ -2009,13 +2011,13 @@ const App = (function(){
       let windWarning = '';
       if (activeMethod === 'pchart' && pdata.wind_factor){
         if (toWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ T/O tailwind ${(-toWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
-        if (ldWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing tailwind ${(-ldWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
+        if (ldWind.headwind < -pdata.wind_factor.max_tailwind_kt) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ LDG tailwind ${(-ldWind.headwind).toFixed(1)} kt exceeds chart limit ${pdata.wind_factor.max_tailwind_kt} kt</div>`;
       }
       // Envelope (chart range) warnings
       const toEnvIssues = toEnvIssuesEarly;
       const ldEnvIssues = ldEnvIssuesEarly;
       if (toEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ T/O outside chart range: ${toEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
-      if (ldEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ Landing outside chart range: ${ldEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
+      if (ldEnvIssues.length) windWarning += `<div class="banner warn" style="margin:0 0 6px;font-size:12px">⚠ LDG outside chart range: ${ldEnvIssues.join('; ')}. Result is extrapolated \u2014 treat with caution.</div>`;
 
       // Chart notes (T/O and LDG) sourced from the active method's data
       let chartNotes = '';
@@ -2034,10 +2036,10 @@ const App = (function(){
       const hasLdWtData = (activeMethod === 'afm' && adata && (adata.landing_table_alt || (adata.landing && adata.landing.weight_correction_pct_per_100kg)));
       const toWtNote = hasToWtData
         ? `Weight: ${(wbW2.tow != null ? wbW2.tow : ac.mtow).toFixed(0)} kg${wbW2.tow == null ? ' (MTOW \u2014 no W&amp;B)' : ''}`
-        : `Weight: MTOW assumed \u2014 chart has no weight factor`;
+        : `Weight: MTOW (no chart factor)`;
       const ldWtNote = hasLdWtData
         ? `Weight: ${(wbW2.ldw != null ? wbW2.ldw : ac.mtow).toFixed(0)} kg${wbW2.ldw == null ? ' (MTOW \u2014 no W&amp;B)' : ''}`
-        : `Weight: MTOW assumed \u2014 chart has no weight factor`;
+        : `Weight: MTOW (no chart factor)`;
       // Factor notes per side: surface and condition corrections.
       // In P-chart mode these are CASO 4 multipliers baked into the chart's data;
       // in FM mode they're AC91-3 corrections layered on top of the FM tables.
@@ -2098,7 +2100,7 @@ const App = (function(){
         windWarning +
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
         stat(`T/O to 50\u2032 ${rTo.ident ? '\u2014 ' + rTo.ident : ''}`, to_result.distance, rTo.tora, toOK, 'TORA', alt_to, toWtNote, toCasoFinal, toXwNote, !!to_result.wind_out_of_range) +
-        stat(`Landing from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCasoFinal, ldXwNote, !!ld_result.wind_out_of_range) +
+        stat(`LDG from 50\u2032 ${rLd.ident ? '\u2014 ' + rLd.ident : ''}`, ld_result.distance, rLd.lda, ldOK, 'LDA', alt_ld, ldWtNote, ldCasoFinal, ldXwNote, !!ld_result.wind_out_of_range) +
         `</div>`;
 
       const fmt2 = x => x.toFixed(3);
@@ -2142,7 +2144,7 @@ const App = (function(){
         <div class="s">${limit && w.crosswind > limit ? '✗ exceeds ' + sub : (limit ? '✓ within ' + sub : sub)}</div>
       </div>`;
     };
-    xwHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${xwRow('T/O crosswind', rTo, toWind)}${xwRow('Landing crosswind', rLd, ldWind)}</div>`;
+    xwHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${xwRow('T/O crosswind', rTo, toWind)}${xwRow('LDG crosswind', rLd, ldWind)}</div>`;
 
     // Tailwind + better-runway suggestions for each side
     const tailwindBlock = (label, runway, w, selId) => {
@@ -2310,8 +2312,8 @@ const App = (function(){
         ${tbl([
           ['T/O headwind reduction', ((wfTo.headwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
           ['T/O tailwind increase', ((wfTo.tailwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
-          ['Landing headwind reduction', ((wfLd.headwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
-          ['Landing tailwind increase', ((wfLd.tailwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
+          ['LDG headwind reduction', ((wfLd.headwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
+          ['LDG tailwind increase', ((wfLd.tailwind_pct_per_kt||0)*100).toFixed(1) + '% per kt'],
           ['Max headwind (chart)', (wfTo.max_headwind_kt||0) + ' kt'],
           ['Max tailwind (chart)', (wfTo.max_tailwind_kt||0) + ' kt'],
         ])}
@@ -3325,7 +3327,7 @@ const App = (function(){
   }
 
   function addClubSyncUrl(){
-    const url = prompt('Paste the club data URL\n\n(OneDrive or Google Drive direct-download link to the club JSON file):');
+    const url = prompt('Paste the club data URL\n\n(e.g. Google Drive direct-download link to the club JSON file):');
     if (!url) return;
     _fetchClubFile(url.trim())
       .then(j => {
@@ -3333,9 +3335,28 @@ const App = (function(){
         clubSyncs.push({ id, club_name: j.club_name, club_short_name: j.club_short_name || j.club_name, url: url.trim(), last_synced_at: null, last_counts: null });
         saveClubSyncs();
         renderClubSyncList();
-        alert(`Added club "${j.club_name}". Click Sync to import its data.`);
+        if (confirm(`Added club "${j.club_name}".\n\nSync now to import its aircraft and runways?`)) syncFromClub(id);
       })
       .catch(err => alert('Could not load club file:\n' + err.message + '\n\nCheck the URL is a direct-download link with public read access.'));
+  }
+
+  function editClubSyncUrl(id){
+    const s = clubSyncs.find(x => x.id === id); if (!s) return;
+    const url = prompt(`Edit URL for "${s.club_name}":`, s.url);
+    if (url == null) return;
+    const trimmed = url.trim();
+    if (!trimmed){ alert('URL cannot be empty.'); return; }
+    if (trimmed === s.url) return;
+    _fetchClubFile(trimmed)
+      .then(j => {
+        s.url = trimmed;
+        if (j.club_name) s.club_name = j.club_name;
+        if (j.club_short_name) s.club_short_name = j.club_short_name;
+        saveClubSyncs();
+        renderClubSyncList();
+        if (confirm(`URL updated for "${s.club_name}".\n\nSync now to apply changes?`)) syncFromClub(id);
+      })
+      .catch(err => alert('Could not load club file at new URL:\n' + err.message + '\n\nThe URL has not been changed.'));
   }
 
   function removeClubSync(id){
@@ -3461,13 +3482,16 @@ const App = (function(){
       const last = s.last_synced_at ? new Date(s.last_synced_at).toLocaleDateString() : 'never';
       const counts = s.last_counts;
       const lastTxt = counts ? `Last sync: ${last} (${counts.acAdded + counts.acReplaced} aircraft, ${counts.rwAdded + counts.rwReplaced} runways)` : `Last sync: ${last}`;
+      const urlShort = (s.url || '').length > 60 ? (s.url.slice(0,57) + '\u2026') : s.url;
       return `<div style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px">
         <div style="font-weight:600">${s.club_name}</div>
-        <div style="font-size:11px;color:var(--muted);margin:2px 0 6px">${lastTxt}</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">
-          <button class="btn secondary" style="flex:1;min-width:80px;font-size:12px;padding:5px" onclick="App.syncFromClub('${s.id}')">Sync now</button>
-          <button class="btn secondary" style="font-size:12px;padding:5px" onclick="App.removeAllFromSource(${JSON.stringify(s.club_name).replace(/"/g,'&quot;')})">Remove imported</button>
-          <button class="btn secondary danger" style="font-size:12px;padding:5px" onclick="App.removeClubSync('${s.id}')">×</button>
+        <div style="font-size:10px;color:var(--muted);font-family:monospace;margin:2px 0;word-break:break-all" title="${(s.url||'').replace(/"/g,'&quot;')}">${urlShort}</div>
+        <div style="font-size:11px;color:var(--muted);margin:0 0 6px">${lastTxt}</div>
+        <div style="display:flex;gap:4px;flex-wrap:nowrap">
+          <button class="btn secondary" style="flex:1;font-size:12px;padding:5px" onclick="App.syncFromClub('${s.id}')">Sync</button>
+          <button class="btn secondary" style="flex:1;font-size:12px;padding:5px" onclick="App.editClubSyncUrl('${s.id}')">Edit URL</button>
+          <button class="btn secondary" style="flex:1;font-size:12px;padding:5px" onclick="App.removeAllFromSource(${JSON.stringify(s.club_name).replace(/"/g,'&quot;')})">Remove imported</button>
+          <button class="btn secondary danger" style="font-size:12px;padding:5px;min-width:32px" onclick="App.removeClubSync('${s.id}')">\u00d7</button>
         </div>
       </div>`;
     }).join('');
@@ -3640,7 +3664,7 @@ const App = (function(){
     openManageRunways, closeManageRunways, manageRunwaySelect, manageRunwayEdit, manageRunwayDuplicate, manageRunwayDelete,
     exportRunways, importRunways, importRunwaysFile, restoreDefaultRunways,
     pickerSelectAll, cancelPicker, confirmPicker,
-    addClubSyncUrl, syncFromClub, removeClubSync, removeAllFromSource,
+    addClubSyncUrl, syncFromClub, removeClubSync, removeAllFromSource, editClubSyncUrl,
   };
 })();
 
