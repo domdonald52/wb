@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v81';
+  const APP_VERSION = 'wb-v82';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -1217,7 +1217,7 @@ const App = (function(){
       return `
         <table style="width:100%;border-collapse:collapse;margin:6px 0;font-size:9pt">
           <tr style="background:#eee"><td colspan="3" style="border:1px solid #999;padding:4px"><strong>${label}${runway.ident ? ' \u2014 ' + runway.ident : ''} breakdown</strong></td></tr>
-          <tr><td style="border:1px solid #999;padding:4px">PPD reference</td><td colspan="2" style="border:1px solid #999;padding:4px;text-align:right">${result.d_ppd.toFixed(0)} m</td></tr>
+          <tr><td style="border:1px solid #999;padding:4px">Private Paved Day reference</td><td colspan="2" style="border:1px solid #999;padding:4px;text-align:right">${result.d_ppd.toFixed(0)} m</td></tr>
           <tr><td style="border:1px solid #999;padding:4px">× Operation</td><td style="border:1px solid #999;padding:4px;text-align:right">${fmt2(o)}</td><td style="border:1px solid #999;padding:4px;text-align:right">${(result.d_ppd*o).toFixed(0)} m</td></tr>
           <tr><td style="border:1px solid #999;padding:4px">× Slope (${runway.slope}%)</td><td style="border:1px solid #999;padding:4px;text-align:right">${fmt2(sl)}</td><td style="border:1px solid #999;padding:4px;text-align:right">${(result.d_ppd*o*sl).toFixed(0)} m</td></tr>
           <tr><td style="border:1px solid #999;padding:4px">× Wind (${w.headwind.toFixed(1)} kt)</td><td style="border:1px solid #999;padding:4px;text-align:right">${fmt2(wf)}</td><td style="border:1px solid #999;padding:4px;text-align:right">${(result.d_ppd*o*sl*wf).toFixed(0)} m</td></tr>
@@ -2107,13 +2107,13 @@ const App = (function(){
       document.getElementById('perf-breakdown').innerHTML = `
         <table style="width:100%;font-variant-numeric:tabular-nums;font-size:12px;border-collapse:collapse">
           <tr><td colspan="3"><strong>Takeoff${rTo.ident ? ' \u2014 ' + rTo.ident : ''}</strong></td></tr>
-          <tr><td>PPD reference</td><td colspan="2" style="text-align:right">${to_result.d_ppd.toFixed(0)} m</td></tr>
+          <tr><td>Private Paved Day reference</td><td colspan="2" style="text-align:right">${to_result.d_ppd.toFixed(0)} m</td></tr>
           <tr><td>× Operation</td><td style="text-align:right">${fmt2(to_result.op_mult)}</td><td style="text-align:right">${(to_result.d_ppd * to_result.op_mult).toFixed(0)} m</td></tr>
           <tr><td>× Slope (${rTo.slope}%)</td><td style="text-align:right">${fmt2(to_result.slope_factor)}</td><td style="text-align:right">${(to_result.d_ppd * to_result.op_mult * to_result.slope_factor).toFixed(0)} m</td></tr>
           <tr><td>× Wind (${toWind.headwind.toFixed(1)} kt)</td><td style="text-align:right">${fmt2(to_result.wind_factor)}</td><td style="text-align:right">${(to_result.d_ppd * to_result.op_mult * to_result.slope_factor * to_result.wind_factor).toFixed(0)} m</td></tr>
           ${toWet ? `<tr><td>× Wet</td><td style="text-align:right">${fmt2(to_result.wet_factor)}</td><td style="text-align:right">${to_result.distance.toFixed(0)} m</td></tr>` : ''}
           <tr><td colspan="3" style="padding-top:8px"><strong>Landing${rLd.ident ? ' \u2014 ' + rLd.ident : ''}</strong></td></tr>
-          <tr><td>PPD reference</td><td colspan="2" style="text-align:right">${ld_result.d_ppd.toFixed(0)} m</td></tr>
+          <tr><td>Private Paved Day reference</td><td colspan="2" style="text-align:right">${ld_result.d_ppd.toFixed(0)} m</td></tr>
           <tr><td>× Operation</td><td style="text-align:right">${fmt2(ld_result.op_mult)}</td><td style="text-align:right">${(ld_result.d_ppd * ld_result.op_mult).toFixed(0)} m</td></tr>
           <tr><td>× Slope (${rLd.slope}%)</td><td style="text-align:right">${fmt2(ld_result.slope_factor)}</td><td style="text-align:right">${(ld_result.d_ppd * ld_result.op_mult * ld_result.slope_factor).toFixed(0)} m</td></tr>
           <tr><td>× Wind (${ldWind.headwind.toFixed(1)} kt)</td><td style="text-align:right">${fmt2(ld_result.wind_factor)}</td><td style="text-align:right">${(ld_result.d_ppd * ld_result.op_mult * ld_result.slope_factor * ld_result.wind_factor).toFixed(0)} m</td></tr>
@@ -2291,7 +2291,7 @@ const App = (function(){
         <p style="margin:8px 0 2px"><strong>Landing reference points</strong> (Private-Paved-Day, zero wind, zero slope, MTOW)</p>
         ${tbl(ldRows)}
 
-        <p style="margin:8px 0 2px"><strong>Operation line multipliers</strong> (applied to PPD)</p>
+        <p style="margin:8px 0 2px"><strong>Operation line multipliers</strong> (applied to Private Paved Day)</p>
         ${tbl(opRows)}
 
         ${Array.isArray(pdata.takeoff_weight_multipliers) && pdata.takeoff_weight_multipliers.length ? `
@@ -3490,8 +3490,8 @@ const App = (function(){
         <div style="display:flex;gap:4px;flex-wrap:nowrap">
           <button class="btn secondary" style="flex:1;font-size:12px;padding:5px" onclick="App.syncFromClub('${s.id}')">Sync</button>
           <button class="btn secondary" style="flex:1;font-size:12px;padding:5px" onclick="App.editClubSyncUrl('${s.id}')">Edit URL</button>
-          <button class="btn secondary" style="flex:1;font-size:12px;padding:5px" onclick="App.removeAllFromSource(${JSON.stringify(s.club_name).replace(/"/g,'&quot;')})">Remove imported</button>
-          <button class="btn secondary danger" style="font-size:12px;padding:5px;min-width:32px" onclick="App.removeClubSync('${s.id}')">\u00d7</button>
+          <button class="btn secondary" style="flex:1;font-size:12px;padding:5px" onclick="App.removeAllFromSource(${JSON.stringify(s.club_name).replace(/"/g,'&quot;')})">Remove data</button>
+          <button class="btn secondary danger" style="flex:1;font-size:12px;padding:5px" onclick="App.removeClubSync('${s.id}')">Unlink</button>
         </div>
       </div>`;
     }).join('');

@@ -62,6 +62,7 @@ h1{font-size:18px;margin:0 0 4px;color:var(--accent)}
   <button onclick="newFile()">New file</button>
   <button onclick="document.getElementById('open-file').click()">Open file…</button>
   <input type="file" id="open-file" accept="application/json" style="display:none" onchange="openFile(event)">
+  <button onclick="openFromUrl()">Open from URL…</button>
   <button onclick="document.getElementById('append-file').click()" title="Add aircraft and/or runways from another file without replacing current state">Append from file…</button>
   <input type="file" id="append-file" accept="application/json" style="display:none" onchange="appendFile(event)">
   <button class="primary" onclick="saveFile()">Save as JSON…</button>
@@ -173,6 +174,40 @@ function openFile(e){
   };
   r.readAsText(f);
   e.target.value = '';
+}
+
+// Normalise common share URLs so the browser can fetch the raw JSON
+function normaliseUrl(url){
+  url = url.trim();
+  // OneDrive personal share
+  if (/^https?:\/\/(1drv\.ms|onedrive\.live\.com)\//i.test(url)){
+    try {
+      const b64 = btoa(url).replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-');
+      return 'https://api.onedrive.com/v1.0/shares/u!' + b64 + '/root/content';
+    } catch(e){ return url; }
+  }
+  // Google Drive share link → direct download
+  const gd = url.match(/^https?:\/\/drive\.google\.com\/file\/d\/([^/]+)/i);
+  if (gd) return 'https://drive.google.com/uc?export=download&id=' + gd[1];
+  const gd2 = url.match(/^https?:\/\/drive\.google\.com\/open\?id=([^&]+)/i);
+  if (gd2) return 'https://drive.google.com/uc?export=download&id=' + gd2[1];
+  return url;
+}
+
+function openFromUrl(){
+  const url = prompt('Paste the club data URL\n\n(GitHub raw URL, Google Drive direct-download link, or similar):');
+  if (!url) return;
+  const realUrl = normaliseUrl(url);
+  const sep = realUrl.includes('?') ? '&' : '?';
+  fetch(realUrl + sep + '_t=' + Date.now(), { cache: 'no-store' })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(j => {
+      ingestFile(j);
+      // Remember the source URL for hint in the title bar (optional, not persisted)
+      state._sourceUrl = url;
+      toast('Loaded from URL — edit and Save as JSON to download a new copy');
+    })
+    .catch(err => alert('Could not load from URL:\n' + err.message + '\n\nThe URL must be a direct-download link to a JSON file.'));
 }
 
 function ingestFile(j){
