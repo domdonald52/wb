@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v83';
+  const APP_VERSION = 'wb-v84';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -634,69 +634,71 @@ const App = (function(){
     if (mode === 'forward'){
       titleEl.textContent = 'Fuel & flight';
       host.innerHTML = `
-        <div class="row">
+        <div class="row" style="align-items:end">
           <div>
             <label>Usable fuel on board (${u(ac).vol})</label>
-            <div style="display:flex;gap:6px;align-items:center">
+            <div style="display:flex;gap:6px;align-items:stretch">
               <input type="number" inputmode="decimal" id="in-fuel" value="${fc.fuel}" min="0" max="${ac.usable_fuel}" step="0.5" style="flex:1">
-              <button class="btn secondary" id="in-fuel-max" type="button" style="width:auto;padding:8px 12px;font-size:12px;white-space:nowrap" title="Calculate and fill the maximum possible usable fuel given station weights, MTOW, tank capacity and CG">Max possible</button>
+              <button class="btn secondary" id="in-fuel-max" type="button" style="width:auto;padding:0 12px;font-size:12px;white-space:nowrap" title="Calculate and fill the maximum possible usable fuel given station weights, MTOW, tank capacity and CG">Max possible</button>
             </div>
-            <small class="help" id="in-fuel-help">tank ${fmt(ac.usable_fuel,1)} ${u(ac).vol} usable · burn ${fmt(ac.burn_rate,1)} ${u(ac).flow}${(ac.fuel_unusable||0) > 0 ? ` · dipstick − ${fmt(ac.fuel_unusable,1)} = usable` : ''}</small>
           </div>
           <div>
             <label>Flight duration (hours)</label>
             <input type="number" inputmode="decimal" id="in-dur" value="${fc.duration}" min="0" max="10" step="0.25">
-            <small class="help" id="in-dur-help">Burn: ${fmt(fc.duration * ac.burn_rate, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(fc.duration * ac.burn_rate * u(ac).fuel_density, 1)} ${u(ac).w}</strong></small>
           </div>
         </div>
+        <div id="fuel-info" style="background:var(--panel-2);padding:6px 10px;border-radius:6px;margin-top:8px;font-size:12px;font-variant-numeric:tabular-nums;border-left:3px solid var(--accent);color:var(--muted)"></div>
         <div id="endurance-check" style="margin-top:6px;font-size:11px"></div>
       `;
-      const refreshEnduranceCheck = () => {
+      const refreshInfo = () => {
         const f = parseFloat(document.getElementById('in-fuel').value) || 0;
         const d = parseFloat(document.getElementById('in-dur').value) || 0;
+        const info = document.getElementById('fuel-info');
         const el = document.getElementById('endurance-check');
-        if (!el || ac.burn_rate <= 0){ if (el) el.innerHTML = ''; return; }
-        const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
-        const endurance = f / ac.burn_rate;
-        const usableEnd = Math.max(0, (f - reserveFuel) / ac.burn_rate);
-        const msg = `Endurance: ${fmt(endurance,2)} h to dry \u00b7 ${fmt(usableEnd,2)} h plus ${ac.reserve_minutes}-min reserve`;
-        if (d > usableEnd && d > 0){
-          el.innerHTML = `<div class="banner bad" style="margin:0;font-size:11px">⚠ Planned duration ${fmt(d,2)} h exceeds endurance after reserve (${fmt(usableEnd,2)} h). ${msg}</div>`;
-        } else if (d > 0){
-          el.innerHTML = `<div style="color:var(--muted)">${msg}</div>`;
-        } else {
-          el.innerHTML = `<div style="color:var(--muted)">${msg}</div>`;
+        if (!info) return;
+        const unusable = ac.fuel_unusable || 0;
+        const dipstick = f + unusable;
+        const burnVol = d * ac.burn_rate;
+        const burnWt = burnVol * u(ac).fuel_density;
+        const parts = [];
+        parts.push(`Usable: <strong>${fmt(f,1)} ${u(ac).vol}</strong>`);
+        if (unusable > 0) parts.push(`Dipstick: <strong>${fmt(dipstick,1)} ${u(ac).vol}</strong>`);
+        parts.push(`Burn: <strong>${fmt(burnVol,1)} ${u(ac).vol}</strong> / <strong>${fmt(burnWt,1)} ${u(ac).w}</strong>`);
+        if (ac.burn_rate > 0){
+          const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
+          const usableEnd = Math.max(0, (f - reserveFuel) / ac.burn_rate);
+          parts.push(`Endurance: <strong>${fmt(usableEnd,2)} h</strong> + ${ac.reserve_minutes}-min reserve`);
         }
+        info.innerHTML = parts.join(' \u00b7 ');
+        // Endurance warning row only when planned duration exceeds usable endurance
+        if (ac.burn_rate > 0 && d > 0){
+          const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
+          const usableEnd = Math.max(0, (f - reserveFuel) / ac.burn_rate);
+          if (d > usableEnd){
+            el.innerHTML = `<div class="banner bad" style="margin:0;font-size:11px">\u26a0 Planned duration ${fmt(d,2)} h exceeds usable endurance (${fmt(usableEnd,2)} h)</div>`;
+          } else { el.innerHTML = ''; }
+        } else { el.innerHTML = ''; }
       };
-      host.querySelector('#in-fuel').addEventListener('input', e => { fc.fuel = parseFloat(e.target.value) || 0; refreshEnduranceCheck(); update(); });
+      host.querySelector('#in-fuel').addEventListener('input', e => { fc.fuel = parseFloat(e.target.value) || 0; refreshInfo(); update(); });
       host.querySelector('#in-fuel-max').addEventListener('click', () => {
         const r = calcReverse(ac);
         fc.fuel = r.bestFuel;
         const fuelEl = document.getElementById('in-fuel');
         fuelEl.value = fmt(r.bestFuel, 1);
-        // Flash to make change obvious
         const origBorder = fuelEl.style.border;
         const origBg = fuelEl.style.background;
         fuelEl.style.border = '2px solid #16a34a';
         fuelEl.style.background = 'rgba(22,163,74,0.15)';
         setTimeout(() => { fuelEl.style.border = origBorder; fuelEl.style.background = origBg; }, 800);
-        const limitedBy = r.bestFuel >= r.maxFuelByMtow - 0.05 ? 'MTOW' : (r.bestFuel >= r.maxFuelByTank - 0.05 ? 'tank capacity' : 'CG envelope');
-        const unusable = ac.fuel_unusable || 0;
-        const dipstick = r.bestFuel + unusable;
-        const help = document.getElementById('in-fuel-help');
-        if (help) help.innerHTML = `Max possible: <strong>${fmt(r.bestFuel,1)} ${u(ac).vol}</strong> usable (limited by ${limitedBy})${unusable > 0 ? ` · dipstick <strong>${fmt(dipstick,1)} ${u(ac).vol}</strong>` : ''}`;
-        refreshEnduranceCheck();
+        refreshInfo();
         update();
       });
       host.querySelector('#in-dur').addEventListener('input', e => {
         fc.duration = parseFloat(e.target.value) || 0;
-        const burnVol = fc.duration * ac.burn_rate;
-        const burnWt = burnVol * u(ac).fuel_density;
-        document.getElementById('in-dur-help').innerHTML = `Burn: ${fmt(burnVol, 1)} ${u(ac).vol} × ${fmt(u(ac).fuel_density, 2)} = <strong>${fmt(burnWt, 1)} ${u(ac).w}</strong>`;
-        refreshEnduranceCheck();
+        refreshInfo();
         update();
       });
-      refreshEnduranceCheck();
+      refreshInfo();
     } else if (mode === 'reverse'){
       titleEl.textContent = 'Maximum fuel';
       const r = calcReverse(ac);
