@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v85';
+  const APP_VERSION = 'wb-v86';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -676,7 +676,7 @@ const App = (function(){
       `;
       const refreshInfo = () => {
         const f = parseFloat(document.getElementById('in-fuel').value) || 0;
-        const d = parseFloat(document.getElementById('in-dur').value) || 0;
+        const d = fc.duration || 0;
         const info = document.getElementById('fuel-info');
         const el = document.getElementById('endurance-check');
         if (!info) return;
