@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v86';
+  const APP_VERSION = 'wb-v88';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -694,12 +694,15 @@ const App = (function(){
           parts.push(`Endurance: <strong>${hoursToHM(usableEnd)}</strong> + ${ac.reserve_minutes}-min reserve`);
         }
         info.innerHTML = parts.join(' \u00b7 ');
-        // Endurance warning row only when planned duration exceeds usable endurance
+        // Endurance check: red if planned duration exceeds usable endurance, amber if within 15 min of it
         if (ac.burn_rate > 0 && d > 0){
           const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
           const usableEnd = Math.max(0, (f - reserveFuel) / ac.burn_rate);
+          const marginH = usableEnd - d; // hours remaining before reserve is eaten into
           if (d > usableEnd){
             el.innerHTML = `<div class="banner bad" style="margin:0;font-size:11px">\u26a0 Planned duration ${hoursToHM(d)} exceeds usable endurance (${hoursToHM(usableEnd)})</div>`;
+          } else if (marginH < 0.25){
+            el.innerHTML = `<div class="banner warn" style="margin:0;font-size:11px">\u26a0 Only ${hoursToHM(marginH)} margin before reserve \u2014 consider extra fuel</div>`;
           } else { el.innerHTML = ''; }
         } else { el.innerHTML = ''; }
       };
@@ -2034,8 +2037,13 @@ const App = (function(){
       const ldEnvIssuesEarly = P.envelopeStatus(env, paLd, oatLd, rLd.elev);
       if (toEnvIssuesEarly.length){ to_result.wind_out_of_range = true; to_result.wind_oor_reason = `T/O outside chart range: ${toEnvIssuesEarly.join('; ')}`; }
       if (ldEnvIssuesEarly.length){ ld_result.wind_out_of_range = true; ld_result.wind_oor_reason = `LDG outside chart range: ${ldEnvIssuesEarly.join('; ')}`; }
-      const toOK = rTo.tora > 0 && to_result.distance <= rTo.tora && !to_result.wind_out_of_range;
-      const ldOK = rLd.lda > 0 && ld_result.distance <= rLd.lda && !ld_result.wind_out_of_range;
+      // Headwind OOR is conservative (chart underestimates the benefit), so the floor distance
+      // is a safe upper bound — still GO if it fits TORA. Tailwind OOR underestimates the
+      // penalty, so NO-GO. Envelope OOR (PA/elev/OAT) leaves direction null and is NO-GO too.
+      const toOorBlocks = !!to_result.wind_out_of_range && to_result.wind_oor_direction !== 'headwind';
+      const ldOorBlocks = !!ld_result.wind_out_of_range && ld_result.wind_oor_direction !== 'headwind';
+      const toOK = rTo.tora > 0 && to_result.distance <= rTo.tora && !toOorBlocks;
+      const ldOK = rLd.lda > 0 && ld_result.distance <= rLd.lda && !ldOorBlocks;
 
       // Compute alternative method if both available, for comparison
       let alt_to = null, alt_ld = null;
@@ -2136,8 +2144,15 @@ const App = (function(){
         summaryBanner = `<div class="banner" style="margin:0 0 8px;background:var(--panel-2);border:1px solid var(--border);color:var(--muted)">Select ${missing.join(' &amp; ')} runway${missing.length>1?'s':''} to evaluate performance.</div>`;
       }
 
-      const toCasoFinal = (to_result.wind_out_of_range ? `<span style="color:#dc2626;font-weight:600">\u2717 ${to_result.wind_oor_reason}</span>${toCaso ? ' \u00b7 ' + toCaso : ''}` : toCaso);
-      const ldCasoFinal = (ld_result.wind_out_of_range ? `<span style="color:#dc2626;font-weight:600">\u2717 ${ld_result.wind_oor_reason}</span>${ldCaso ? ' \u00b7 ' + ldCaso : ''}` : ldCaso);
+      const oorMarker = (res) => {
+        if (!res.wind_out_of_range) return '';
+        if (res.wind_oor_direction === 'headwind'){
+          return `<span style="color:#d97706;font-weight:600">\u26a0 ${res.wind_oor_reason} \u2014 distance shown is a safe upper bound (chart can't credit the extra headwind)</span>`;
+        }
+        return `<span style="color:#dc2626;font-weight:600">\u2717 ${res.wind_oor_reason}</span>`;
+      };
+      const toCasoFinal = (to_result.wind_out_of_range ? `${oorMarker(to_result)}${toCaso ? ' \u00b7 ' + toCaso : ''}` : toCaso);
+      const ldCasoFinal = (ld_result.wind_out_of_range ? `${oorMarker(ld_result)}${ldCaso ? ' \u00b7 ' + ldCaso : ''}` : ldCaso);
 
       const bannerTop = document.getElementById('perf-banner-top');
       if (bannerTop) bannerTop.innerHTML = summaryBanner;

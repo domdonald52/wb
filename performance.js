@@ -149,7 +149,7 @@ window.Performance = (function(){
     const wind_factor = computeWindFactor(data.wind_factor_takeoff || data.wind_factor, wind_component_kt);
     d *= wind_factor.value;
     if (wet) d *= 1.15;
-    return { distance: d, d_ppd, op_mult, weight_mult, slope_factor, wind_factor: wind_factor.value, wind_out_of_range: wind_factor.outOfRange, wind_oor_reason: wind_factor.reason, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, d_ppd, op_mult, weight_mult, slope_factor, wind_factor: wind_factor.value, wind_out_of_range: wind_factor.outOfRange, wind_oor_reason: wind_factor.reason, wind_oor_direction: wind_factor.direction, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function pchartLandingDistance(data, elev_ft, operation, slope_pct, wind_component_kt, wet){
@@ -172,22 +172,22 @@ window.Performance = (function(){
     const wind_factor = computeWindFactor(data.wind_factor_landing || data.wind_factor, wind_component_kt);
     d *= wind_factor.value;
     if (wet) d *= 1.15;
-    return { distance: d, d_ppd, op_mult, slope_factor, wind_factor: wind_factor.value, wind_out_of_range: wind_factor.outOfRange, wind_oor_reason: wind_factor.reason, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, d_ppd, op_mult, slope_factor, wind_factor: wind_factor.value, wind_out_of_range: wind_factor.outOfRange, wind_oor_reason: wind_factor.reason, wind_oor_direction: wind_factor.direction, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function computeWindFactor(wf, wind_kt){
     if (!wf) wf = { headwind_pct_per_kt: 0.015, tailwind_pct_per_kt: 0.06, max_headwind_kt: 20, max_tailwind_kt: 5 };
-    let factor, outOfRange = false, reason = null;
+    let factor, outOfRange = false, reason = null, direction = null;
     if (wind_kt >= 0){
       const capped = Math.min(wind_kt, wf.max_headwind_kt);
-      if (wind_kt > wf.max_headwind_kt){ outOfRange = true; reason = `Headwind ${wind_kt.toFixed(0)} kt exceeds chart limit ${wf.max_headwind_kt} kt`; }
+      if (wind_kt > wf.max_headwind_kt){ outOfRange = true; reason = `Headwind ${wind_kt.toFixed(0)} kt exceeds chart limit ${wf.max_headwind_kt} kt`; direction = 'headwind'; }
       factor = 1 - wf.headwind_pct_per_kt * capped;
     } else {
       const tail = Math.min(-wind_kt, wf.max_tailwind_kt);
-      if (-wind_kt > wf.max_tailwind_kt){ outOfRange = true; reason = `Tailwind ${(-wind_kt).toFixed(0)} kt exceeds chart limit ${wf.max_tailwind_kt} kt`; }
+      if (-wind_kt > wf.max_tailwind_kt){ outOfRange = true; reason = `Tailwind ${(-wind_kt).toFixed(0)} kt exceeds chart limit ${wf.max_tailwind_kt} kt`; direction = 'tailwind'; }
       factor = 1 + wf.tailwind_pct_per_kt * tail;
     }
-    return { value: factor, outOfRange, reason };
+    return { value: factor, outOfRange, reason, direction };
   }
 
   // Bilinear interpolation/extrapolation over a PA × OAT grid.
@@ -267,7 +267,7 @@ window.Performance = (function(){
     const wind_factor = wfTo.value;
     d *= wind_factor;
     if (wet) d *= 1.15;
-    return { distance: d, surf_factor, slope_factor, wind_factor, wind_out_of_range: wfTo.outOfRange, wind_oor_reason: wfTo.reason, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, surf_factor, slope_factor, wind_factor, wind_out_of_range: wfTo.outOfRange, wind_oor_reason: wfTo.reason, wind_oor_direction: wfTo.direction, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   function afmFactorsLanding(ac_afm, pa_ft, oat_c, surface, slope_pct, wind_kt, wet){
@@ -306,7 +306,7 @@ window.Performance = (function(){
     const wind_factor = wfLd.value;
     d *= wind_factor;
     if (wet) d *= 1.15;
-    return { distance: d, surf_factor, slope_factor, wind_factor, wind_out_of_range: wfLd.outOfRange, wind_oor_reason: wfLd.reason, wet_factor: wet ? 1.15 : 1.00 };
+    return { distance: d, surf_factor, slope_factor, wind_factor, wind_out_of_range: wfLd.outOfRange, wind_oor_reason: wfLd.reason, wind_oor_direction: wfLd.direction, wet_factor: wet ? 1.15 : 1.00 };
   }
 
   // ---- Envelope helpers ----
