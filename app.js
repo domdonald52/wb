@@ -150,7 +150,7 @@ const App = (function(){
     perf_method: 'pchart',
   };
   let recentRunways = [];
-  const APP_VERSION = 'wb-v84';
+  const APP_VERSION = 'wb-v85';
   let runways = [];
   let selectedToRunwayId = null;
   let selectedLdRunwayId = null;
@@ -170,6 +170,30 @@ const App = (function(){
     return Number(n).toLocaleString(undefined, {minimumFractionDigits:d, maximumFractionDigits:d});
   };
   const fmtArm = (n, ac) => fmt(n, ac.units === 'metric' ? 0 : 2);
+  // Time helpers: convert between decimal hours and hh:mm string
+  function hoursToHHMM(h){
+    if (!isFinite(h) || h < 0) h = 0;
+    const totalMin = Math.round(h * 60);
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
+    return hh + ':' + (mm < 10 ? '0' : '') + mm;
+  }
+  function hoursToHM(h){
+    if (!isFinite(h) || h < 0) h = 0;
+    const totalMin = Math.round(h * 60);
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
+    return hh + 'h ' + (mm < 10 ? '0' : '') + mm + 'm';
+  }
+  function hhmmToHours(s){
+    if (typeof s !== 'string') s = String(s || '');
+    const m = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const hh = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    if (mm > 59) return null;
+    return hh + mm / 60;
+  }
 
   // ---- storage ----
   // Natural alphanumeric collator: "NZWN 16" < "NZWN 34" (numeric segments compared as numbers)
@@ -643,8 +667,8 @@ const App = (function(){
             </div>
           </div>
           <div>
-            <label>Flight duration (hours)</label>
-            <input type="number" inputmode="decimal" id="in-dur" value="${fc.duration}" min="0" max="10" step="0.25">
+            <label>Flight duration (hh:mm)</label>
+            <input type="text" inputmode="numeric" pattern="[0-9]{1,2}:[0-9]{2}" id="in-dur" value="${hoursToHHMM(fc.duration)}" placeholder="0:00" maxlength="5">
           </div>
         </div>
         <div id="fuel-info" style="background:var(--panel-2);padding:6px 10px;border-radius:6px;margin-top:8px;font-size:12px;font-variant-numeric:tabular-nums;border-left:3px solid var(--accent);color:var(--muted)"></div>
@@ -667,7 +691,7 @@ const App = (function(){
         if (ac.burn_rate > 0){
           const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
           const usableEnd = Math.max(0, (f - reserveFuel) / ac.burn_rate);
-          parts.push(`Endurance: <strong>${fmt(usableEnd,2)} h</strong> + ${ac.reserve_minutes}-min reserve`);
+          parts.push(`Endurance: <strong>${hoursToHM(usableEnd)}</strong> + ${ac.reserve_minutes}-min reserve`);
         }
         info.innerHTML = parts.join(' \u00b7 ');
         // Endurance warning row only when planned duration exceeds usable endurance
@@ -675,7 +699,7 @@ const App = (function(){
           const reserveFuel = (ac.reserve_minutes / 60) * ac.burn_rate;
           const usableEnd = Math.max(0, (f - reserveFuel) / ac.burn_rate);
           if (d > usableEnd){
-            el.innerHTML = `<div class="banner bad" style="margin:0;font-size:11px">\u26a0 Planned duration ${fmt(d,2)} h exceeds usable endurance (${fmt(usableEnd,2)} h)</div>`;
+            el.innerHTML = `<div class="banner bad" style="margin:0;font-size:11px">\u26a0 Planned duration ${hoursToHM(d)} exceeds usable endurance (${hoursToHM(usableEnd)})</div>`;
           } else { el.innerHTML = ''; }
         } else { el.innerHTML = ''; }
       };
@@ -694,7 +718,29 @@ const App = (function(){
         update();
       });
       host.querySelector('#in-dur').addEventListener('input', e => {
-        fc.duration = parseFloat(e.target.value) || 0;
+        // Mask input to hh:mm: strip non-digits, auto-insert colon after the hours digits
+        const el = e.target;
+        const raw = el.value.replace(/[^\d]/g, '').slice(0, 4); // up to HHMM
+        let masked;
+        if (raw.length === 0) masked = '';
+        else if (raw.length <= 2) masked = raw;
+        else masked = raw.slice(0, raw.length - 2) + ':' + raw.slice(-2);
+        if (el.value !== masked) el.value = masked;
+        const hrs = hhmmToHours(masked);
+        fc.duration = hrs == null ? 0 : hrs;
+        refreshInfo();
+        update();
+      });
+      host.querySelector('#in-dur').addEventListener('blur', e => {
+        // On blur, normalise to canonical hh:mm if user left mid-edit (e.g. "1" → "0:01" makes no sense; "1" → "1:00")
+        const raw = e.target.value.replace(/[^\d]/g, '');
+        if (raw.length === 0) return;
+        let hh = 0, mm = 0;
+        if (raw.length <= 2){ hh = parseInt(raw, 10); }
+        else { hh = parseInt(raw.slice(0, raw.length - 2), 10); mm = parseInt(raw.slice(-2), 10); }
+        if (mm > 59) mm = 59;
+        e.target.value = hh + ':' + (mm < 10 ? '0' : '') + mm;
+        fc.duration = hh + mm/60;
         refreshInfo();
         update();
       });
